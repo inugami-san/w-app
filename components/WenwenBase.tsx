@@ -328,8 +328,7 @@ export const WenwenBase: React.FC<WenwenProps> = ({
               <RoundedRect x={L_EYE_X - EYE_R * 0.6} y={EYE_Y - EYE_R * 1.3} width={EYE_R * 1.2} height={EYE_R * 2.6} r={EYE_R * 0.6} color={eyeColor} />
 
               {/* Right Eye (Vertical Pill) */}
-              <RoundedRect x={R_EYE_X - EYE_R * 0.6} y={EYE_Y - EYE_R * 1.3} width={EYE_R * 1.2} height={EYE_R * 2.6} r={EYE_R * 0.6} co
-                lor={eyeColor} />
+              <RoundedRect x={R_EYE_X - EYE_R * 0.6} y={EYE_Y - EYE_R * 1.3} width={EYE_R * 1.2} height={EYE_R * 2.6} r={EYE_R * 0.6} color={eyeColor} />
             </Group>
 
             {/* WEMMSY Cloud SVG */}
@@ -350,4 +349,3 @@ const styles = StyleSheet.create({
 });
 
 export default WenwenBase;
-
