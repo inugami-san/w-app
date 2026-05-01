@@ -1,24 +1,27 @@
-/**
- * WenwenBase.tsx v8
- * Absolute precision matching to the original Wemmsy reference:
- * - Body: Flat-bottomed squircle shape (not a perfect oval)
- * - Arms: Custom bezier flippers with distinct inner-thumb paw hooks, drawn over body
- * - Details: Horizontal body seam line above the arms
- * - Legs: Large spheres resting under the flat bottom
- * - Logo: Native text overlays for pixel-perfect readability
- * - Responsiveness: Uses onLayout to guarantee perfect scaling and centering on all mobile devices.
- */
-import React, { useMemo, useEffect, useRef, useState } from 'react';
-import { Dimensions, StyleSheet, View, Text } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Dimensions, StyleSheet, View } from 'react-native';
 import {
-  Canvas, Path, LinearGradient, RadialGradient, vec, Skia,
-  BlurMask, Oval, Circle, Group, RoundedRect
+  BlurMask,
+  Canvas,
+  Group,
+  LinearGradient,
+  Oval,
+  Path,
+  RoundedRect,
+  Skia,
+  vec,
 } from '@shopify/react-native-skia';
 import {
-  useSharedValue, useDerivedValue,
-  withRepeat, withTiming, withSequence, Easing, withSpring
+  Easing,
+  useDerivedValue,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
-import { GestureDetector, Gesture } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 export interface WenwenProps {
   eyeColor?: string;
@@ -31,7 +34,6 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   faceColor = '#E2E8F0',
   bodyColor = '#F0F2F5',
 }) => {
-  // Use local state to track actual container dimensions for proper mobile rendering
   const [size, setSize] = useState(() => {
     const { width, height } = Dimensions.get('window');
     return { w: width, h: height * 0.7 };
@@ -44,14 +46,13 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     }
   };
 
-  // Safe minimums to prevent Skia crashes on initial empty renders
   const SW = Math.max(size.w, 100);
   const SH = Math.max(size.h, 100);
 
   const CW = Math.min(SW * 0.425, 180);
   const CH = CW * 0.88;
   const CX = SW / 2;
-  const CY = SH * 0.45; // Centered gracefully
+  const CY = SH * 0.45;
 
   const FP_RX = CW * 0.42;
   const FP_RY = CH * 0.38;
@@ -62,24 +63,35 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   const L_EYE_X = CX - CW * 0.18;
   const R_EYE_X = CX + CW * 0.18;
 
-  const MOUTH_Y = FP_CY + FP_RY * 0.45;
-  const MOUTH_HW = CW * 0.08;
-
   const BLUSH_Y = EYE_Y + EYE_R * 1.3;
   const L_BLUSH_X = CX - CW * 0.25;
   const R_BLUSH_X = CX + CW * 0.25;
   const BLUSH_RX = CW * 0.08;
   const BLUSH_RY = CH * 0.04;
 
-  const FOOT_W = CW * 0.35;
-  const FOOT_H = CW * 0.35;
-  const L_FPX = CX - CW * 0.25;
-  const L_FPY = CY + CH * 0.45;
-  const R_FPX = CX + CW * 0.25;
-  const R_FPY = CY + CH * 0.45;
+  const TV_PAD_X = FP_RX * 0.08;
+  const TV_PAD_Y = FP_RY * 0.12;
+  const TV_X = CX - FP_RX + TV_PAD_X;
+  const TV_Y = FP_CY - FP_RY + TV_PAD_Y;
+  const TV_W = FP_RX * 2 - TV_PAD_X * 2;
+  const TV_H = FP_RY * 2 - TV_PAD_Y * 2;
 
-  const ARM_W = CW * 0.15;
-  const ARM_H = CH * 0.15;
+  const HI_STROKE = TV_W * 0.085;
+  const HI_HEIGHT = TV_H * 0.38;
+  const HI_TOP = TV_Y + TV_H * 0.32;
+  const H_LEFT = CX - TV_W * 0.17;
+  const H_RIGHT = CX - TV_W * 0.03;
+  const I_CENTER = CX + TV_W * 0.19;
+
+  const FOOT_W = CW * 0.33;
+  const FOOT_H = CW * 0.33;
+  const L_FPX = CX - CW * 0.22;
+  const L_FPY = CY + CH * 0.47;
+  const R_FPX = CX + CW * 0.22;
+  const R_FPY = CY + CH * 0.47;
+
+  const ARM_W = CW * 0.14;
+  const ARM_H = CH * 0.16;
   const L_SHX = CX - CW * 0.42;
   const L_SHY = CY + CH * 0.16;
   const R_SHX = CX + CW * 0.42;
@@ -87,8 +99,11 @@ export const WenwenBase: React.FC<WenwenProps> = ({
 
   const bodyPath = useMemo(() => {
     const p = Skia.Path.Make();
-    const x = CX, y = CY;
-    const w = CW / 2, h = CH / 2;
+    const x = CX;
+    const y = CY;
+    const w = CW / 2;
+    const h = CH / 2;
+
     p.moveTo(x, y - h);
     p.cubicTo(x + w, y - h, x + w, y - h * 0.2, x + w, y + h * 0.1);
     p.cubicTo(x + w, y + h * 0.8, x + w * 0.6, y + h, x + w * 0.3, y + h);
@@ -96,28 +111,21 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     p.cubicTo(x - w * 0.6, y + h, x - w, y + h * 0.8, x - w, y + h * 0.1);
     p.cubicTo(x - w, y - h * 0.2, x - w, y - h, x, y - h);
     p.close();
-    return p;
-  }, [CX, CY, CW, CH]);
 
-  const seamPath = useMemo(() => {
-    const p = Skia.Path.Make();
-    const sy = CY - CH * 0.04;
-    p.moveTo(CX - CW * 0.44, sy);
-    p.quadTo(CX, sy + CH * 0.08, CX + CW * 0.44, sy);
     return p;
   }, [CX, CY, CW, CH]);
 
   const lArmPath = useMemo(() => {
     const p = Skia.Path.Make();
     p.moveTo(0, 0);
-    p.quadTo(-ARM_W * 1.2, ARM_H * 0.4, ARM_W * 0.2, ARM_H * 0.85);
+    p.quadTo(-ARM_W * 1.15, ARM_H * 0.45, ARM_W * 0.2, ARM_H * 0.9);
     return p;
   }, [ARM_W, ARM_H]);
 
   const rArmPath = useMemo(() => {
     const p = Skia.Path.Make();
     p.moveTo(0, 0);
-    p.quadTo(ARM_W * 1.2, ARM_H * 0.4, -ARM_W * 0.2, ARM_H * 0.85);
+    p.quadTo(ARM_W * 1.15, ARM_H * 0.45, -ARM_W * 0.2, ARM_H * 0.9);
     return p;
   }, [ARM_W, ARM_H]);
 
@@ -127,20 +135,17 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     return p;
   }, [FOOT_W, FOOT_H]);
 
-  const smilePath = useMemo(() => {
-    const p = Skia.Path.Make();
-    p.moveTo(CX - MOUTH_HW, MOUTH_Y);
-    p.quadTo(CX, MOUTH_Y + CW * 0.08, CX + MOUTH_HW, MOUTH_Y);
-    return p;
-  }, [CX, CY, CW, MOUTH_Y, MOUTH_HW]);
-
-  const cloudPath = useMemo(() => Skia.Path.MakeFromSVGString('M 0 10 C -10 10 -10 0 0 0 C 0 -15 20 -15 20 0 C 30 0 30 10 20 10 Z') || Skia.Path.Make(), []);
+  const cloudPath = useMemo(
+    () =>
+      Skia.Path.MakeFromSVGString(
+        'M 0 10 C -10 10 -10 0 0 0 C 0 -15 20 -15 20 0 C 30 0 30 10 20 10 Z'
+      ) || Skia.Path.Make(),
+    []
+  );
 
   const faceBridgePath = useMemo(() => {
     const p = Skia.Path.Make();
-    // Start slightly inside the left eye
     p.moveTo(L_EYE_X + EYE_R * 0.2, EYE_Y);
-    // Curve downwards gently like a stethoscope or a wide smile
     p.quadTo(CX, EYE_Y + EYE_R * 0.7, R_EYE_X - EYE_R * 0.2, EYE_Y);
     return p;
   }, [CX, L_EYE_X, R_EYE_X, EYE_Y, EYE_R]);
@@ -155,44 +160,153 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   const rArmAngle = useSharedValue(0.0);
   const idleArmAngle = useSharedValue(0.0);
   const idleLegY = useSharedValue(0.0);
+  const happyFaceY = useSharedValue(0.0);
+  const hiWave = useSharedValue(0.0);
+  const hiWaveBodyY = useSharedValue(0.0);
+  const tvOverlay = useSharedValue(0.0);
+  const tvTextOpacity = useSharedValue(0.0);
+  const tvScanProgress = useSharedValue(0.0);
+  const tvScanOpacity = useSharedValue(0.0);
+  const tvJitterX = useSharedValue(0.0);
+  const tvJitterY = useSharedValue(0.0);
   const activeTarget = useSharedValue(0);
 
   useEffect(() => {
-    breatheY.value = withRepeat(withTiming(-4, { duration: 3800, easing: Easing.inOut(Easing.sin) }), -1, true);
+    breatheY.value = withRepeat(withTiming(-4, { duration: 2200, easing: Easing.inOut(Easing.sin) }), -1, true);
+    bounceY.value = withRepeat(
+      withSequence(
+        withTiming(-CW * 0.014, { duration: 950, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0, { duration: 950, easing: Easing.inOut(Easing.sin) })
+      ),
+      -1,
+      false
+    );
+    bodyRock.value = withRepeat(
+      withSequence(
+        withTiming(0.012, { duration: 1600, easing: Easing.inOut(Easing.sin) }),
+        withTiming(-0.012, { duration: 1600, easing: Easing.inOut(Easing.sin) })
+      ),
+      -1,
+      true
+    );
     idleArmAngle.value = withRepeat(
       withSequence(
-        withTiming(0.05, { duration: 2500, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0.0, { duration: 2500, easing: Easing.inOut(Easing.sin) })
+        withTiming(0.045, { duration: 2200, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0.0, { duration: 2200, easing: Easing.inOut(Easing.sin) })
       ),
-      -1, true
+      -1,
+      true
     );
     idleLegY.value = withRepeat(
       withSequence(
-        withTiming(-CW * 0.02, { duration: 2000, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0.0, { duration: 2000, easing: Easing.inOut(Easing.sin) })
+        withTiming(-CW * 0.016, { duration: 950, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0.0, { duration: 950, easing: Easing.inOut(Easing.sin) })
       ),
-      -1, true
+      -1,
+      true
     );
-  }, [CW]);
+    happyFaceY.value = withRepeat(
+      withSequence(
+        withTiming(-CW * 0.008, { duration: 1100, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0, { duration: 1100, easing: Easing.inOut(Easing.sin) })
+      ),
+      -1,
+      true
+    );
+  }, [CW, bodyRock, bounceY, breatheY, happyFaceY, idleArmAngle, idleLegY]);
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hiWaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const schedule = () => {
-      const r = Math.random();
-      if (r < 0.45) {
-        bounceY.value = withSequence(withTiming(-CW * 0.016, { duration: 1200 }), withTiming(CW * 0.005, { duration: 900 }), withTiming(0, { duration: 1000 }));
-      } else if (r < 0.80) {
-        bodyRock.value = withSequence(withTiming(0.030, { duration: 900 }), withTiming(-0.035, { duration: 1100 }), withTiming(0.015, { duration: 800 }), withTiming(0, { duration: 700 }));
-      }
-      timerRef.current = setTimeout(schedule, 6000 + Math.random() * 6000);
+    hiWaveTimerRef.current = setTimeout(() => {
+      hiWave.value = withSequence(
+        withTiming(0.55, { duration: 320, easing: Easing.out(Easing.cubic) }),
+        withRepeat(
+          withSequence(
+            withTiming(0.18, { duration: 180, easing: Easing.inOut(Easing.sin) }),
+            withTiming(0.55, { duration: 180, easing: Easing.inOut(Easing.sin) })
+          ),
+          3,
+          false
+        ),
+        withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) })
+      );
+
+      hiWaveBodyY.value = withSequence(
+        withTiming(-CW * 0.018, { duration: 320, easing: Easing.out(Easing.cubic) }),
+        withRepeat(
+          withSequence(
+            withTiming(-CW * 0.008, { duration: 180, easing: Easing.inOut(Easing.sin) }),
+            withTiming(-CW * 0.018, { duration: 180, easing: Easing.inOut(Easing.sin) })
+          ),
+          3,
+          false
+        ),
+        withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) })
+      );
+    }, 1100);
+
+    return () => {
+      if (hiWaveTimerRef.current) clearTimeout(hiWaveTimerRef.current);
     };
-    timerRef.current = setTimeout(schedule, 4000);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [CW]);
+  }, [CW, hiWave, hiWaveBodyY]);
+
+  const tvTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const runTvFlick = () => {
+      tvOverlay.value = withSequence(
+        withTiming(0.92, { duration: 75, easing: Easing.out(Easing.cubic) }),
+        withTiming(0.4, { duration: 65, easing: Easing.inOut(Easing.sin) }),
+        withTiming(1, { duration: 80, easing: Easing.out(Easing.cubic) }),
+        withTiming(0.62, { duration: 70, easing: Easing.inOut(Easing.sin) }),
+        withTiming(1, { duration: 85, easing: Easing.out(Easing.cubic) }),
+        withDelay(850, withTiming(0, { duration: 260, easing: Easing.out(Easing.quad) }))
+      );
+
+      tvTextOpacity.value = withSequence(
+        withDelay(240, withTiming(1, { duration: 120, easing: Easing.out(Easing.cubic) })),
+        withDelay(650, withTiming(0, { duration: 180, easing: Easing.inOut(Easing.sin) }))
+      );
+
+      tvScanProgress.value = 0;
+      tvScanProgress.value = withTiming(1, { duration: 620, easing: Easing.inOut(Easing.quad) });
+      tvScanOpacity.value = withSequence(
+        withTiming(0.86, { duration: 120 }),
+        withTiming(0.4, { duration: 220 }),
+        withTiming(0.7, { duration: 130 }),
+        withTiming(0, { duration: 240 })
+      );
+
+      tvJitterX.value = withSequence(
+        withTiming(-CW * 0.01, { duration: 40 }),
+        withTiming(CW * 0.012, { duration: 48 }),
+        withTiming(-CW * 0.006, { duration: 42 }),
+        withTiming(0, { duration: 50 })
+      );
+      tvJitterY.value = withSequence(
+        withTiming(CW * 0.005, { duration: 44 }),
+        withTiming(-CW * 0.005, { duration: 44 }),
+        withTiming(0, { duration: 48 })
+      );
+    };
+
+    const scheduleNext = () => {
+      const nextDelay = 5000 + Math.random() * 5000;
+      tvTimerRef.current = setTimeout(() => {
+        runTvFlick();
+        scheduleNext();
+      }, nextDelay);
+    };
+
+    scheduleNext();
+
+    return () => {
+      if (tvTimerRef.current) clearTimeout(tvTimerRef.current);
+    };
+  }, [CW, tvJitterX, tvJitterY, tvOverlay, tvScanOpacity, tvScanProgress, tvTextOpacity]);
 
   const bodyT = useDerivedValue(() => [
     { translateX: CX },
-    { translateY: CY + bounceY.value + breatheY.value },
+    { translateY: CY + bounceY.value + breatheY.value + hiWaveBodyY.value },
     { rotate: bodyTilt.value + bodyRock.value },
     { scaleX: stretchX.value },
     { scaleY: squashY.value },
@@ -205,24 +319,33 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     { translateY: L_SHY },
     { rotate: lArmAngle.value + idleArmAngle.value },
   ]);
+
   const rArmT = useDerivedValue(() => [
     { translateX: R_SHX },
     { translateY: R_SHY },
-    { rotate: rArmAngle.value - idleArmAngle.value },
+    { rotate: rArmAngle.value - idleArmAngle.value - hiWave.value },
   ]);
+
   const lLegT = useDerivedValue(() => [{ translateX: L_FPX }, { translateY: L_FPY + idleLegY.value }]);
   const rLegT = useDerivedValue(() => [{ translateX: R_FPX }, { translateY: R_FPY + idleLegY.value }]);
+  const faceT = useDerivedValue(() => [{ translateY: happyFaceY.value }]);
+  const tvScreenT = useDerivedValue(() => [{ translateX: tvJitterX.value }, { translateY: tvJitterY.value }]);
+  const tvScanT = useDerivedValue(() => [{ translateY: tvScanProgress.value * TV_H }]);
 
-  const clamp = (v: number, lo: number, hi: number) => { 'worklet'; return v < lo ? lo : v > hi ? hi : v; };
+  const clamp = (v: number, lo: number, hi: number) => {
+    'worklet';
+    return v < lo ? lo : v > hi ? hi : v;
+  };
 
   const tapGesture = Gesture.Tap().onEnd(() => {
-    squashY.value = withSequence(withSpring(0.96), withSpring(1.02), withSpring(1.00));
-    stretchX.value = withSequence(withSpring(1.04), withSpring(0.99), withSpring(1.00));
+    squashY.value = withSequence(withSpring(0.96), withSpring(1.02), withSpring(1.0));
+    stretchX.value = withSequence(withSpring(1.04), withSpring(0.99), withSpring(1.0));
   });
 
   const panGesture = Gesture.Pan()
     .onBegin((e) => {
-      const near = (ax: number, ay: number, r: number) => (e.x - ax) * (e.x - ax) + (e.y - ay) * (e.y - ay) < r * r;
+      const near = (ax: number, ay: number, r: number) =>
+        (e.x - ax) * (e.x - ax) + (e.y - ay) * (e.y - ay) < r * r;
       if (near(L_SHX, L_SHY, ARM_W * 1.5)) activeTarget.value = 1;
       else if (near(R_SHX, R_SHY, ARM_W * 1.5)) activeTarget.value = 2;
       else activeTarget.value = 0;
@@ -250,12 +373,10 @@ export const WenwenBase: React.FC<WenwenProps> = ({
       <GestureDetector gesture={gesture}>
         <Canvas style={styles.canvas}>
           <Group transform={bodyT}>
-            {/* Main Shadow */}
-            <Path path={bodyPath} color="rgba(0,0,0,0.15)" transform={[{ translateY: 25 }]}>
+            <Path path={bodyPath} color="rgba(0,0,0,0.15)" transform={[{ translateY: 25 }]}> 
               <BlurMask blur={35} style="normal" />
             </Path>
 
-            {/* Arms (Drawn BEHIND body for a seamless shoulder joint) */}
             <Group transform={lArmT}>
               <Path path={lArmPath} style="stroke" strokeWidth={ARM_W} strokeCap="round" color={bodyColor}>
                 <LinearGradient start={vec(-ARM_W, 0)} end={vec(ARM_W, 0)} colors={['#FFFFFF', '#94A3B8']} />
@@ -268,13 +389,12 @@ export const WenwenBase: React.FC<WenwenProps> = ({
               </Path>
             </Group>
 
-            {/* Legs (Drawn behind body) */}
             <Group transform={lLegT}>
               <Path path={footPath} color={bodyColor}>
                 <LinearGradient start={vec(0, -FOOT_H / 2)} end={vec(0, FOOT_H / 2)} colors={['#FFFFFF', '#94A3B8']} />
               </Path>
-              <Oval x={-FOOT_W * 0.25} y={-FOOT_H * 0.1} width={FOOT_W * 0.5} height={FOOT_H * 0.4} color="#CBD5E1">
-                <LinearGradient start={vec(0, -FOOT_H * 0.1)} end={vec(0, FOOT_H * 0.3)} colors={['#CBD5E1', '#94A3B8']} />
+              <Oval x={-FOOT_W * 0.22} y={-FOOT_H * 0.08} width={FOOT_W * 0.44} height={FOOT_H * 0.34} color="#CBD5E1">
+                <LinearGradient start={vec(0, -FOOT_H * 0.08)} end={vec(0, FOOT_H * 0.26)} colors={['#CBD5E1', '#A9B7CB']} />
               </Oval>
             </Group>
 
@@ -282,60 +402,72 @@ export const WenwenBase: React.FC<WenwenProps> = ({
               <Path path={footPath} color={bodyColor}>
                 <LinearGradient start={vec(0, -FOOT_H / 2)} end={vec(0, FOOT_H / 2)} colors={['#FFFFFF', '#94A3B8']} />
               </Path>
-              <Oval x={-FOOT_W * 0.25} y={-FOOT_H * 0.1} width={FOOT_W * 0.5} height={FOOT_H * 0.4} color="#CBD5E1">
-                <LinearGradient start={vec(0, -FOOT_H * 0.1)} end={vec(0, FOOT_H * 0.3)} colors={['#CBD5E1', '#94A3B8']} />
+              <Oval x={-FOOT_W * 0.22} y={-FOOT_H * 0.08} width={FOOT_W * 0.44} height={FOOT_H * 0.34} color="#CBD5E1">
+                <LinearGradient start={vec(0, -FOOT_H * 0.08)} end={vec(0, FOOT_H * 0.26)} colors={['#CBD5E1', '#A9B7CB']} />
               </Oval>
             </Group>
 
-            {/* Body Ambient Occlusion Shadow (Darkens arms and legs where they tuck behind the body) */}
             <Path path={bodyPath} color="rgba(0,0,0,0.12)">
               <BlurMask blur={20} style="normal" />
             </Path>
 
-            {/* Main Body */}
             <Path path={bodyPath} color={bodyColor}>
               <LinearGradient start={vec(CX, CY - CH / 2)} end={vec(CX, CY + CH / 2)} colors={['#FFFFFF', bodyColor, '#CBD5E1']} />
             </Path>
-            {/* Subtle 3D shading on the right */}
+
             <Path path={bodyPath} color="transparent">
-              <LinearGradient start={vec(CX, CY)} end={vec(CX + CW * 0.5, CY + CH * 0.5)} colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.1)']} />
+              <LinearGradient start={vec(CX, CY)} end={vec(CX + CW * 0.5, CY + CH * 0.5)} colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.08)']} />
             </Path>
 
-            {/* Body Seam Line */}
-            <Path path={seamPath} color="rgba(0,0,0,0.06)" style="stroke" strokeWidth={3} strokeCap="round" />
-            <Path path={seamPath} color="rgba(255,255,255,0.6)" style="stroke" strokeWidth={3} strokeCap="round" transform={[{ translateY: 1 }]} />
-
-            {/* Specular Highlight (Top Left) */}
             <Oval x={CX - CW * 0.3} y={CY - CH * 0.4} width={CW * 0.5} height={CH * 0.15} color="rgba(255,255,255,0.7)">
               <BlurMask blur={15} style="normal" />
             </Oval>
 
-            {/* Face Plate Base Color */}
-            <Oval x={CX - FP_RX} y={FP_CY - FP_RY} width={FP_RX * 2} height={FP_RY * 2} color={faceColor} />
-            {/* Face Plate 3D Shading Overlay */}
-            <Oval x={CX - FP_RX} y={FP_CY - FP_RY} width={FP_RX * 2} height={FP_RY * 2} color="transparent">
-              <LinearGradient start={vec(CX, FP_CY - FP_RY)} end={vec(CX, FP_CY + FP_RY)} colors={['rgba(255,255,255,0.7)', 'rgba(0,0,0,0.05)']} />
-            </Oval>
-            <Oval x={CX - FP_RX} y={FP_CY - FP_RY} width={FP_RX * 2} height={FP_RY * 2} style="stroke" strokeWidth={3} color="rgba(0,0,0,0.06)" />
-            <Oval x={CX - FP_RX - 2} y={FP_CY - FP_RY - 2} width={FP_RX * 2 + 4} height={FP_RY * 2 + 4} style="stroke" strokeWidth={3} color="rgba(255,255,255,0.6)" />
+            <Group transform={faceT}>
+              <Oval x={CX - FP_RX} y={FP_CY - FP_RY} width={FP_RX * 2} height={FP_RY * 2} color={faceColor} />
+              <Oval x={CX - FP_RX} y={FP_CY - FP_RY} width={FP_RX * 2} height={FP_RY * 2} color="transparent">
+                <LinearGradient start={vec(CX, FP_CY - FP_RY)} end={vec(CX, FP_CY + FP_RY)} colors={['rgba(255,255,255,0.7)', 'rgba(0,0,0,0.05)']} />
+              </Oval>
+              <Oval x={CX - FP_RX} y={FP_CY - FP_RY} width={FP_RX * 2} height={FP_RY * 2} style="stroke" strokeWidth={3} color="rgba(0,0,0,0.06)" />
+              <Oval x={CX - FP_RX - 2} y={FP_CY - FP_RY - 2} width={FP_RX * 2 + 4} height={FP_RY * 2 + 4} style="stroke" strokeWidth={3} color="rgba(255,255,255,0.6)" />
 
-            {/* Face - Legally Distinct Minimalist Style */}
-            <Group>
-              {/* Soft sagging bridge (Stethoscope style) */}
-              <Path path={faceBridgePath} color={eyeColor} style="stroke" strokeWidth={EYE_R * 0.25} strokeCap="round" />
+              <Group>
+                <Path path={faceBridgePath} color={eyeColor} style="stroke" strokeWidth={EYE_R * 0.25} strokeCap="round" />
+                <RoundedRect x={L_EYE_X - EYE_R * 0.6} y={EYE_Y - EYE_R * 1.3} width={EYE_R * 1.2} height={EYE_R * 2.6} r={EYE_R * 0.6} color={eyeColor} />
+                <RoundedRect x={R_EYE_X - EYE_R * 0.6} y={EYE_Y - EYE_R * 1.3} width={EYE_R * 1.2} height={EYE_R * 2.6} r={EYE_R * 0.6} color={eyeColor} />
+                <Oval x={L_BLUSH_X - BLUSH_RX} y={BLUSH_Y - BLUSH_RY} width={BLUSH_RX * 2} height={BLUSH_RY * 2} color="rgba(255,255,255,0.16)" />
+                <Oval x={R_BLUSH_X - BLUSH_RX} y={BLUSH_Y - BLUSH_RY} width={BLUSH_RX * 2} height={BLUSH_RY * 2} color="rgba(255,255,255,0.16)" />
+              </Group>
 
-              {/* Left Eye (Vertical Pill) */}
-              <RoundedRect x={L_EYE_X - EYE_R * 0.6} y={EYE_Y - EYE_R * 1.3} width={EYE_R * 1.2} height={EYE_R * 2.6} r={EYE_R * 0.6} color={eyeColor} />
+              <Group opacity={tvOverlay} transform={tvScreenT}>
+                <RoundedRect x={TV_X} y={TV_Y} width={TV_W} height={TV_H} r={TV_H * 0.25} color="#071422">
+                  <LinearGradient start={vec(TV_X, TV_Y)} end={vec(TV_X, TV_Y + TV_H)} colors={['#071422', '#0E2033', '#071422']} />
+                </RoundedRect>
 
-              {/* Right Eye (Vertical Pill) */}
-              <RoundedRect x={R_EYE_X - EYE_R * 0.6} y={EYE_Y - EYE_R * 1.3} width={EYE_R * 1.2} height={EYE_R * 2.6} r={EYE_R * 0.6} color={eyeColor} />
+                <RoundedRect x={TV_X + TV_W * 0.04} y={TV_Y + TV_H * 0.14} width={TV_W * 0.92} height={TV_H * 0.012} r={TV_H * 0.006} color="rgba(120,220,255,0.24)" />
+                <RoundedRect x={TV_X + TV_W * 0.04} y={TV_Y + TV_H * 0.35} width={TV_W * 0.92} height={TV_H * 0.012} r={TV_H * 0.006} color="rgba(120,220,255,0.2)" />
+                <RoundedRect x={TV_X + TV_W * 0.04} y={TV_Y + TV_H * 0.56} width={TV_W * 0.92} height={TV_H * 0.012} r={TV_H * 0.006} color="rgba(120,220,255,0.22)" />
+                <RoundedRect x={TV_X + TV_W * 0.04} y={TV_Y + TV_H * 0.77} width={TV_W * 0.92} height={TV_H * 0.012} r={TV_H * 0.006} color="rgba(120,220,255,0.18)" />
+
+                <Group transform={tvScanT} opacity={tvScanOpacity}>
+                  <RoundedRect x={TV_X} y={TV_Y - TV_H * 0.2} width={TV_W} height={TV_H * 0.2} r={TV_H * 0.06} color="#34D3FF">
+                    <LinearGradient start={vec(TV_X, TV_Y - TV_H * 0.2)} end={vec(TV_X, TV_Y)} colors={['rgba(255,255,255,0)', 'rgba(52,211,255,0.85)']} />
+                  </RoundedRect>
+                </Group>
+
+                <Group opacity={tvTextOpacity}>
+                  <RoundedRect x={H_LEFT - HI_STROKE / 2} y={HI_TOP} width={HI_STROKE} height={HI_HEIGHT} r={HI_STROKE / 2} color="#7FF4FF" />
+                  <RoundedRect x={H_RIGHT - HI_STROKE / 2} y={HI_TOP} width={HI_STROKE} height={HI_HEIGHT} r={HI_STROKE / 2} color="#7FF4FF" />
+                  <RoundedRect x={H_LEFT} y={HI_TOP + HI_HEIGHT * 0.45} width={H_RIGHT - H_LEFT} height={HI_STROKE * 0.75} r={HI_STROKE * 0.34} color="#7FF4FF" />
+
+                  <RoundedRect x={I_CENTER - HI_STROKE / 2} y={HI_TOP} width={HI_STROKE} height={HI_HEIGHT} r={HI_STROKE / 2} color="#7FF4FF" />
+                </Group>
+              </Group>
+
+              <Group transform={[{ translateX: CX + CW * 0.22 }, { translateY: CY + CH * 0.14 }, { scale: 0.85 }]}> 
+                <Path path={cloudPath} color="#64748B" style="stroke" strokeWidth={2.5} strokeJoin="round" />
+              </Group>
             </Group>
-
-            {/* WEMMSY Cloud SVG */}
-            <Group transform={[{ translateX: CX + CW * 0.22 }, { translateY: CY + CH * 0.14 }, { scale: 0.85 }]}>
-              <Path path={cloudPath} color="#64748B" style="stroke" strokeWidth={2.5} strokeJoin="round" />
-            </Group>
-
           </Group>
         </Canvas>
       </GestureDetector>

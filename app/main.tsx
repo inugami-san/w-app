@@ -20,6 +20,7 @@ import {
   TouchableOpacity,
   Text,
 } from 'react-native';
+import { router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // ─── Props interface (mirrors WenwenBase) ────────────────────────────────────
@@ -173,21 +174,39 @@ export default function HomeScreen() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
+      <View style={styles.topHeader}>
+        <Text style={styles.topTitle}>Persona Customization</Text>
+        <Text style={styles.topSubtitle}>Care-Bot Upgrade</Text>
+      </View>
 
       {/* ── Character canvas ── */}
       <View style={styles.canvasArea}>
-        {WenwenComponent && (
-          <WenwenComponent
-            eyeColor={eyeColor}
-            faceColor={faceColor}
-            bodyColor={bodyColor}
-          />
-        )}
+        <View style={styles.characterWrap}>
+          {WenwenComponent && (
+            <WenwenComponent
+              eyeColor={eyeColor}
+              faceColor={faceColor}
+              bodyColor={bodyColor}
+            />
+          )}
+        </View>
       </View>
 
       {/* ── Color picker panel ── */}
       <View style={styles.panel}>
-        <Text style={styles.panelTitle}>✦ Customize Wenwen</Text>
+        <View style={styles.panelHeader}>
+          <Text style={styles.panelTitle}>✦ Customize Wenwen</Text>
+          <TouchableOpacity
+            style={styles.submitButton}
+            onPress={() =>
+              router.push({
+                pathname: '/dashboard',
+                params: { eyeColor, faceColor, bodyColor },
+              })
+            }>
+            <Text style={styles.submitText}>Submit</Text>
+          </TouchableOpacity>
+        </View>
 
         <SwatchRow
           label="Eyes"
@@ -220,13 +239,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1A1A2E',
   },
+  topHeader: {
+    paddingTop: 56,
+    paddingHorizontal: 24,
+    marginBottom: 8,
+  },
+  topTitle: {
+    color: '#F8FAFC',
+    fontSize: 36,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  topSubtitle: {
+    color: '#A8B3CF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 2,
+  },
   canvasArea: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingBottom: 8,
+  },
+  characterWrap: {
+    width: '100%',
+    maxWidth: 460,
+    height: '100%',
   },
   panel: {
-    position: 'absolute',
-    bottom: 0,
-    width: '100%',
     backgroundColor: '#12122A',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.07)',
@@ -234,12 +275,30 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     paddingBottom: 28,
   },
+  panelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
   panelTitle: {
     color: '#E2E8F0',
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 1.2,
-    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+  submitButton: {
+    backgroundColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  submitText: {
+    color: '#12122A',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
 });
