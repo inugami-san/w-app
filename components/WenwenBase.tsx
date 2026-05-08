@@ -69,8 +69,8 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   const BLUSH_RX = CW * 0.08;
   const BLUSH_RY = CH * 0.04;
 
-  const TV_PAD_X = FP_RX * 0.08;
-  const TV_PAD_Y = FP_RY * 0.12;
+  const TV_PAD_X = FP_RX * 0.02;
+  const TV_PAD_Y = FP_RY * 0.03;
   const TV_X = CX - FP_RX + TV_PAD_X;
   const TV_Y = FP_CY - FP_RY + TV_PAD_Y;
   const TV_W = FP_RX * 2 - TV_PAD_X * 2;
@@ -150,6 +150,12 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     return p;
   }, [CX, L_EYE_X, R_EYE_X, EYE_Y, EYE_R]);
 
+  const tvClipPath = useMemo(() => {
+    const p = Skia.Path.Make();
+    p.addOval({ x: TV_X, y: TV_Y, width: TV_W, height: TV_H });
+    return p;
+  }, [TV_H, TV_W, TV_X, TV_Y]);
+
   const breatheY = useSharedValue(0);
   const bounceY = useSharedValue(0);
   const bodyRock = useSharedValue(0);
@@ -167,8 +173,6 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   const tvTextOpacity = useSharedValue(0.0);
   const tvScanProgress = useSharedValue(0.0);
   const tvScanOpacity = useSharedValue(0.0);
-  const tvJitterX = useSharedValue(0.0);
-  const tvJitterY = useSharedValue(0.0);
   const activeTarget = useSharedValue(0);
 
   useEffect(() => {
@@ -252,57 +256,33 @@ export const WenwenBase: React.FC<WenwenProps> = ({
 
   const tvTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const runTvFlick = () => {
+    tvTimerRef.current = setTimeout(() => {
       tvOverlay.value = withSequence(
-        withTiming(0.92, { duration: 75, easing: Easing.out(Easing.cubic) }),
-        withTiming(0.4, { duration: 65, easing: Easing.inOut(Easing.sin) }),
-        withTiming(1, { duration: 80, easing: Easing.out(Easing.cubic) }),
-        withTiming(0.62, { duration: 70, easing: Easing.inOut(Easing.sin) }),
-        withTiming(1, { duration: 85, easing: Easing.out(Easing.cubic) }),
-        withDelay(850, withTiming(0, { duration: 260, easing: Easing.out(Easing.quad) }))
+        withTiming(0.82, { duration: 220, easing: Easing.out(Easing.cubic) }),
+        withTiming(0.38, { duration: 240, easing: Easing.inOut(Easing.sin) }),
+        withTiming(0.94, { duration: 280, easing: Easing.out(Easing.cubic) }),
+        withDelay(1200, withTiming(0, { duration: 520, easing: Easing.out(Easing.quad) }))
       );
 
       tvTextOpacity.value = withSequence(
-        withDelay(240, withTiming(1, { duration: 120, easing: Easing.out(Easing.cubic) })),
-        withDelay(650, withTiming(0, { duration: 180, easing: Easing.inOut(Easing.sin) }))
+        withDelay(700, withTiming(1, { duration: 360, easing: Easing.out(Easing.cubic) })),
+        withDelay(1150, withTiming(0, { duration: 420, easing: Easing.inOut(Easing.sin) }))
       );
 
       tvScanProgress.value = 0;
-      tvScanProgress.value = withTiming(1, { duration: 620, easing: Easing.inOut(Easing.quad) });
+      tvScanProgress.value = withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.quad) });
       tvScanOpacity.value = withSequence(
-        withTiming(0.86, { duration: 120 }),
-        withTiming(0.4, { duration: 220 }),
-        withTiming(0.7, { duration: 130 }),
-        withTiming(0, { duration: 240 })
+        withTiming(0.68, { duration: 260 }),
+        withTiming(0.34, { duration: 520 }),
+        withTiming(0.58, { duration: 300 }),
+        withTiming(0, { duration: 360 })
       );
-
-      tvJitterX.value = withSequence(
-        withTiming(-CW * 0.01, { duration: 40 }),
-        withTiming(CW * 0.012, { duration: 48 }),
-        withTiming(-CW * 0.006, { duration: 42 }),
-        withTiming(0, { duration: 50 })
-      );
-      tvJitterY.value = withSequence(
-        withTiming(CW * 0.005, { duration: 44 }),
-        withTiming(-CW * 0.005, { duration: 44 }),
-        withTiming(0, { duration: 48 })
-      );
-    };
-
-    const scheduleNext = () => {
-      const nextDelay = 5000 + Math.random() * 5000;
-      tvTimerRef.current = setTimeout(() => {
-        runTvFlick();
-        scheduleNext();
-      }, nextDelay);
-    };
-
-    scheduleNext();
+    }, 5600);
 
     return () => {
       if (tvTimerRef.current) clearTimeout(tvTimerRef.current);
     };
-  }, [CW, tvJitterX, tvJitterY, tvOverlay, tvScanOpacity, tvScanProgress, tvTextOpacity]);
+  }, [tvOverlay, tvScanOpacity, tvScanProgress, tvTextOpacity]);
 
   const bodyT = useDerivedValue(() => [
     { translateX: CX },
@@ -329,7 +309,6 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   const lLegT = useDerivedValue(() => [{ translateX: L_FPX }, { translateY: L_FPY + idleLegY.value }]);
   const rLegT = useDerivedValue(() => [{ translateX: R_FPX }, { translateY: R_FPY + idleLegY.value }]);
   const faceT = useDerivedValue(() => [{ translateY: happyFaceY.value }]);
-  const tvScreenT = useDerivedValue(() => [{ translateX: tvJitterX.value }, { translateY: tvJitterY.value }]);
   const tvScanT = useDerivedValue(() => [{ translateY: tvScanProgress.value * TV_H }]);
 
   const clamp = (v: number, lo: number, hi: number) => {
@@ -439,20 +418,20 @@ export const WenwenBase: React.FC<WenwenProps> = ({
                 <Oval x={R_BLUSH_X - BLUSH_RX} y={BLUSH_Y - BLUSH_RY} width={BLUSH_RX * 2} height={BLUSH_RY * 2} color="rgba(255,255,255,0.16)" />
               </Group>
 
-              <Group opacity={tvOverlay} transform={tvScreenT}>
-                <RoundedRect x={TV_X} y={TV_Y} width={TV_W} height={TV_H} r={TV_H * 0.25} color="#071422">
-                  <LinearGradient start={vec(TV_X, TV_Y)} end={vec(TV_X, TV_Y + TV_H)} colors={['#071422', '#0E2033', '#071422']} />
-                </RoundedRect>
+              <Group opacity={tvOverlay} clip={tvClipPath}>
+                <Oval x={TV_X} y={TV_Y} width={TV_W} height={TV_H} color="#071422">
+                  <LinearGradient start={vec(TV_X, TV_Y)} end={vec(TV_X, TV_Y + TV_H)} colors={['#071422', '#0F2538', '#071422']} />
+                </Oval>
 
-                <RoundedRect x={TV_X + TV_W * 0.04} y={TV_Y + TV_H * 0.14} width={TV_W * 0.92} height={TV_H * 0.012} r={TV_H * 0.006} color="rgba(120,220,255,0.24)" />
-                <RoundedRect x={TV_X + TV_W * 0.04} y={TV_Y + TV_H * 0.35} width={TV_W * 0.92} height={TV_H * 0.012} r={TV_H * 0.006} color="rgba(120,220,255,0.2)" />
-                <RoundedRect x={TV_X + TV_W * 0.04} y={TV_Y + TV_H * 0.56} width={TV_W * 0.92} height={TV_H * 0.012} r={TV_H * 0.006} color="rgba(120,220,255,0.22)" />
-                <RoundedRect x={TV_X + TV_W * 0.04} y={TV_Y + TV_H * 0.77} width={TV_W * 0.92} height={TV_H * 0.012} r={TV_H * 0.006} color="rgba(120,220,255,0.18)" />
+                <RoundedRect x={TV_X + TV_W * 0.06} y={TV_Y + TV_H * 0.14} width={TV_W * 0.88} height={TV_H * 0.01} r={TV_H * 0.005} color="rgba(120,220,255,0.2)" />
+                <RoundedRect x={TV_X + TV_W * 0.06} y={TV_Y + TV_H * 0.33} width={TV_W * 0.88} height={TV_H * 0.01} r={TV_H * 0.005} color="rgba(120,220,255,0.16)" />
+                <RoundedRect x={TV_X + TV_W * 0.06} y={TV_Y + TV_H * 0.52} width={TV_W * 0.88} height={TV_H * 0.01} r={TV_H * 0.005} color="rgba(120,220,255,0.18)" />
+                <RoundedRect x={TV_X + TV_W * 0.06} y={TV_Y + TV_H * 0.71} width={TV_W * 0.88} height={TV_H * 0.01} r={TV_H * 0.005} color="rgba(120,220,255,0.14)" />
 
                 <Group transform={tvScanT} opacity={tvScanOpacity}>
-                  <RoundedRect x={TV_X} y={TV_Y - TV_H * 0.2} width={TV_W} height={TV_H * 0.2} r={TV_H * 0.06} color="#34D3FF">
-                    <LinearGradient start={vec(TV_X, TV_Y - TV_H * 0.2)} end={vec(TV_X, TV_Y)} colors={['rgba(255,255,255,0)', 'rgba(52,211,255,0.85)']} />
-                  </RoundedRect>
+                  <Oval x={TV_X} y={TV_Y - TV_H * 0.2} width={TV_W} height={TV_H * 0.2} color="#34D3FF">
+                    <LinearGradient start={vec(TV_X, TV_Y - TV_H * 0.2)} end={vec(TV_X, TV_Y)} colors={['rgba(255,255,255,0)', 'rgba(52,211,255,0.78)']} />
+                  </Oval>
                 </Group>
 
                 <Group opacity={tvTextOpacity}>

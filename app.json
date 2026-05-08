@@ -22,7 +22,7 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -41,7 +41,6 @@
       ],
       "expo-sqlite",
       "expo-font",
-      "expo-image",
       "expo-web-browser"
     ],
     "experiments": {

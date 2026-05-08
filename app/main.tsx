@@ -19,6 +19,8 @@ import {
   View,
   TouchableOpacity,
   Text,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -143,6 +145,7 @@ const row = StyleSheet.create({
 export default function HomeScreen() {
   const [WenwenComponent, setWenwenComponent] =
     useState<ComponentType<WenwenProps> | null>(null);
+  const { height } = useWindowDimensions();
 
   // Color state — image-accurate defaults
   const [eyeColor,  setEyeColor]  = useState('#00D4C2');
@@ -172,62 +175,70 @@ export default function HomeScreen() {
     }
   }, []);
 
+  const canvasHeight = Math.max(260, Math.min(360, height * 0.34));
+
   return (
     <GestureHandlerRootView style={styles.root}>
-      <View style={styles.topHeader}>
-        <Text style={styles.topTitle}>Persona Customization</Text>
-        <Text style={styles.topSubtitle}>Care-Bot Upgrade</Text>
-      </View>
-
-      {/* ── Character canvas ── */}
-      <View style={styles.canvasArea}>
-        <View style={styles.characterWrap}>
-          {WenwenComponent && (
-            <WenwenComponent
-              eyeColor={eyeColor}
-              faceColor={faceColor}
-              bodyColor={bodyColor}
-            />
-          )}
-        </View>
-      </View>
-
-      {/* ── Color picker panel ── */}
-      <View style={styles.panel}>
-        <View style={styles.panelHeader}>
-          <Text style={styles.panelTitle}>✦ Customize Wenwen</Text>
-          <TouchableOpacity
-            style={styles.submitButton}
-            onPress={() =>
-              router.push({
-                pathname: '/dashboard',
-                params: { eyeColor, faceColor, bodyColor },
-              })
-            }>
-            <Text style={styles.submitText}>Submit</Text>
-          </TouchableOpacity>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.topHeader}>
+          <Text style={styles.topTitle}>Persona Customization</Text>
+          <Text style={styles.topSubtitle}>Care-Bot Upgrade</Text>
         </View>
 
-        <SwatchRow
-          label="Eyes"
-          colors={EYE_COLORS}
-          selected={eyeColor}
-          onSelect={setEyeColor}
-        />
-        <SwatchRow
-          label="Face"
-          colors={FACE_COLORS}
-          selected={faceColor}
-          onSelect={setFaceColor}
-        />
-        <SwatchRow
-          label="Body"
-          colors={BODY_COLORS}
-          selected={bodyColor}
-          onSelect={setBodyColor}
-        />
-      </View>
+        {/* ── Character canvas ── */}
+        <View style={[styles.canvasArea, { height: canvasHeight }]}>
+          <View style={styles.characterWrap}>
+            {WenwenComponent && (
+              <WenwenComponent
+                eyeColor={eyeColor}
+                faceColor={faceColor}
+                bodyColor={bodyColor}
+              />
+            )}
+          </View>
+        </View>
 
+        {/* ── Color picker panel ── */}
+        <View style={styles.panel}>
+          <View style={styles.panelHeader}>
+            <Text style={styles.panelTitle}>✦ Customize Wenwen</Text>
+            <TouchableOpacity
+              style={styles.submitButton}
+              onPress={() =>
+                router.push({
+                  pathname: '/dashboard',
+                  params: { eyeColor, faceColor, bodyColor },
+                })
+              }>
+              <Text style={styles.submitText}>Submit</Text>
+            </TouchableOpacity>
+          </View>
+
+          <SwatchRow
+            label="Eyes"
+            colors={EYE_COLORS}
+            selected={eyeColor}
+            onSelect={setEyeColor}
+          />
+          <SwatchRow
+            label="Face"
+            colors={FACE_COLORS}
+            selected={faceColor}
+            onSelect={setFaceColor}
+          />
+          <SwatchRow
+            label="Body"
+            colors={BODY_COLORS}
+            selected={bodyColor}
+            onSelect={setBodyColor}
+          />
+        </View>
+      </ScrollView>
     </GestureHandlerRootView>
   );
 }
@@ -239,10 +250,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#1A1A2E',
   },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+  },
   topHeader: {
-    paddingTop: 56,
+    paddingTop: 44,
     paddingHorizontal: 24,
-    marginBottom: 8,
+    marginBottom: 2,
   },
   topTitle: {
     color: '#F8FAFC',
@@ -257,10 +274,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   canvasArea: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
   characterWrap: {
     width: '100%',
