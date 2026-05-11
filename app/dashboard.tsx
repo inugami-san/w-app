@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 import type { WenwenProps } from '@/components/WenwenBase';
 import type { TaskItem } from '@/src/types/task';
@@ -31,6 +32,8 @@ function getParam(value: string | string[] | undefined, fallback: string): strin
   return value ?? fallback;
 }
 
+type ThemeMode = 'light' | 'dark';
+
 export default function DashboardScreen() {
   const params = useLocalSearchParams<{
     eyeColor?: string | string[];
@@ -45,6 +48,7 @@ export default function DashboardScreen() {
   const [isGeneratingSuggestion, setIsGeneratingSuggestion] = useState(false);
   const [suggestedTasks, setSuggestedTasks] = useState<SuggestedTask[]>([]);
   const [isSuggestionReviewOpen, setIsSuggestionReviewOpen] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>('dark');
 
   const eyeColor = getParam(params.eyeColor, '#00D4C2');
   const faceColor = getParam(params.faceColor, '#E2E8F0');

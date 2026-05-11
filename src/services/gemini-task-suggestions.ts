@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import type { SuggestedTask, WellnessCategory } from '@/src/types/ai-task';
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
@@ -54,9 +55,9 @@ function normalizeSuggestion(raw: unknown): SuggestedTask {
 }
 
 export async function generateGeminiTaskSuggestion(category: WellnessCategory): Promise<SuggestedTask> {
-  const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+  const apiKey = Constants.manifest?.extra?.GEMINI_API_KEY ?? process.env.EXPO_PUBLIC_GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error('Missing EXPO_PUBLIC_GEMINI_API_KEY.');
+    throw new Error('Missing Gemini API key. Configure GEMINI_API_KEY in app.config.js extra or EXPO_PUBLIC_GEMINI_API_KEY.');
   }
 
   const prompt = `${BASE_PROMPT}\n\nSelected wellness category: ${category}`;

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 export type DashboardTabKey = 'home' | 'customize' | 'journal' | 'companion';
 
@@ -43,6 +44,17 @@ export function BottomTabPlaceholder({
           <Text style={[styles.label, activeKey === tab.key && styles.activeText]}>{tab.label}</Text>
         </Pressable>
       ))}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Settings"
+        onPress={() => onTabPress?.('companion')}
+        style={({ pressed }) => [
+          styles.tab,
+          pressed && styles.tabPressed,
+        ]}
+      >
+        <Ionicons name="settings-outline" size={18} color="#8DA0C6" />
+      </Pressable>
     </View>
   );
 }
@@ -58,14 +70,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 8,
     marginTop: 14,
+    elevation: 10,
   },
   tab: {
     flex: 1,
-    minHeight: 52,
-    borderRadius: 16,
+    minHeight: 40,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 2,
+    gap: 1,
   },
   tabActive: {
     backgroundColor: 'rgba(82,196,255,0.18)',
