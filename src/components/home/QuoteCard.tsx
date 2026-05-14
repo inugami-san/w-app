@@ -1,15 +1,23 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useAppTheme } from '@/src/theme/app-theme';
 
 type QuoteCardProps = {
   quote: string;
 };
 
 export function QuoteCard({ quote }: QuoteCardProps) {
+  const theme = useAppTheme();
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.kicker}>Wenwen Note</Text>
-      <Text style={styles.quote}>{quote}</Text>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: theme.primarySoft, borderColor: theme.softBorder },
+      ]}
+    >
+      <Text style={[styles.kicker, { color: theme.primaryStrong }]}>Wenwen Note</Text>
+      <Text style={[styles.quote, { color: theme.textStrong }]}>{quote}</Text>
     </View>
   );
 }
@@ -17,13 +25,10 @@ export function QuoteCard({ quote }: QuoteCardProps) {
 const styles = StyleSheet.create({
   container: {
     borderRadius: 18,
-    backgroundColor: 'rgba(86,146,255,0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(134,178,255,0.25)',
     padding: 14,
   },
   kicker: {
-    color: '#AFCAFF',
     fontSize: 12,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -31,7 +36,6 @@ const styles = StyleSheet.create({
   },
   quote: {
     marginTop: 8,
-    color: '#E9F2FF',
     fontSize: 14,
     lineHeight: 20,
     fontWeight: '600',

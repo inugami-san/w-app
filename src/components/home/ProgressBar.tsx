@@ -6,6 +6,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { useAppTheme } from '@/src/theme/app-theme';
 
 type ProgressBarProps = {
   completed: number;
@@ -13,6 +14,7 @@ type ProgressBarProps = {
 };
 
 export function ProgressBar({ completed, total }: ProgressBarProps) {
+  const theme = useAppTheme();
   const [trackWidth, setTrackWidth] = useState(0);
   const animatedWidth = useSharedValue(0);
 
@@ -38,14 +40,19 @@ export function ProgressBar({ completed, total }: ProgressBarProps) {
   }));
 
   return (
-    <View style={styles.container}>
+    <View
+      style={[
+        styles.container,
+        { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow },
+      ]}
+    >
       <View style={styles.headerRow}>
-        <Text style={styles.label}>Today&apos;s Progress</Text>
-        <Text style={styles.value}>{completed}/{total}</Text>
+        <Text style={[styles.label, { color: theme.textStrong }]}>Today&apos;s Progress</Text>
+        <Text style={[styles.value, { color: theme.primary }]}>{completed}/{total}</Text>
       </View>
 
-      <View style={styles.track} onLayout={onTrackLayout}>
-        <Animated.View style={[styles.fill, barStyle]} />
+      <View style={[styles.track, { backgroundColor: theme.softSurface }]} onLayout={onTrackLayout}>
+        <Animated.View style={[styles.fill, { backgroundColor: theme.primary }, barStyle]} />
       </View>
     </View>
   );
@@ -54,10 +61,12 @@ export function ProgressBar({ completed, total }: ProgressBarProps) {
 const styles = StyleSheet.create({
   container: {
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
     padding: 14,
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
   },
   headerRow: {
     flexDirection: 'row',
@@ -66,12 +75,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   label: {
-    color: '#DDE8FB',
     fontSize: 14,
     fontWeight: '700',
   },
   value: {
-    color: '#A6C1F3',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -79,12 +86,10 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 10,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.14)',
     overflow: 'hidden',
   },
   fill: {
     height: '100%',
     borderRadius: 999,
-    backgroundColor: '#3BD8C5',
   },
 });

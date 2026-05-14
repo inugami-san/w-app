@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { createDefaultTasks } from '@/src/features/tasks/defaultTasks';
+import { useJournalStore } from '@/src/store/journal-store';
 import type { TaskItem } from '@/src/types/task';
 import { getLocalDateKey } from '@/src/utils/date';
 
@@ -26,6 +27,20 @@ type TaskStore = {
 
 function makeTaskId() {
   return `task-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+}
+
+function archiveTasksForDate(dateKey: string, tasks: TaskItem[]) {
+  if (!dateKey || tasks.length === 0) return;
+
+  useJournalStore.getState().setTaskSnapshot(
+    dateKey,
+    tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      detail: task.detail,
+      done: task.done,
+    }))
+  );
 }
 
 export const useTaskStore = create<TaskStore>()(
@@ -87,9 +102,11 @@ export const useTaskStore = create<TaskStore>()(
 
       resetDailyTasks: (force = false) => {
         const today = getLocalDateKey(new Date());
-        const { lastDailyReset } = get();
+        const { lastDailyReset, tasks } = get();
 
         if (!force && lastDailyReset === today) return;
+
+        archiveTasksForDate(force ? today : lastDailyReset || today, tasks);
 
         const nowIso = new Date().toISOString();
         set((state) => ({

@@ -1,8 +1,9 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useAppTheme } from '@/src/theme/app-theme';
 
-export type DashboardTabKey = 'home' | 'customize' | 'journal' | 'companion';
+export type DashboardTabKey = 'home' | 'customize' | 'journal' | 'companion' | 'settings';
 
 type TabItem = {
   key: DashboardTabKey;
@@ -11,10 +12,10 @@ type TabItem = {
 };
 
 const TABS: TabItem[] = [
-  { key: 'home', label: 'Home', icon: '⌂' },
-  { key: 'customize', label: 'Customize', icon: '✦' },
-  { key: 'journal', label: 'Journal', icon: '✎' },
-  { key: 'companion', label: 'Companion', icon: '◉' },
+  { key: 'home', label: 'Home', icon: 'home-outline' },
+  { key: 'customize', label: 'Customize', icon: 'sparkles-outline' },
+  { key: 'journal', label: 'Journal', icon: 'create-outline' },
+  { key: 'companion', label: 'Companion', icon: 'chatbubble-ellipses-outline' },
 ];
 
 interface BottomTabPlaceholderProps {
@@ -26,8 +27,19 @@ export function BottomTabPlaceholder({
   activeKey = 'home',
   onTabPress,
 }: BottomTabPlaceholderProps) {
+  const theme = useAppTheme();
+
   return (
-    <View style={styles.wrap}>
+    <View
+      style={[
+        styles.wrap,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.border,
+          shadowColor: theme.shadow,
+        },
+      ]}
+    >
       {TABS.map((tab) => (
         <Pressable
           key={tab.key}
@@ -36,24 +48,50 @@ export function BottomTabPlaceholder({
           onPress={() => onTabPress?.(tab.key)}
           style={({ pressed }) => [
             styles.tab,
-            activeKey === tab.key && styles.tabActive,
+            activeKey === tab.key && { backgroundColor: theme.activeSurface },
             pressed && styles.tabPressed,
           ]}
         >
-          <Text style={[styles.icon, activeKey === tab.key && styles.activeText]}>{tab.icon}</Text>
-          <Text style={[styles.label, activeKey === tab.key && styles.activeText]}>{tab.label}</Text>
+          <Ionicons
+            name={tab.icon as keyof typeof Ionicons.glyphMap}
+            size={18}
+            color={activeKey === tab.key ? theme.primaryStrong : theme.subtle}
+          />
+          <Text
+            style={[
+              styles.label,
+              { color: theme.subtle },
+              activeKey === tab.key && { color: theme.primaryStrong },
+            ]}
+          >
+            {tab.label}
+          </Text>
         </Pressable>
       ))}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Settings"
-        onPress={() => onTabPress?.('companion')}
+        onPress={() => onTabPress?.('settings')}
         style={({ pressed }) => [
           styles.tab,
+          activeKey === 'settings' && { backgroundColor: theme.activeSurface },
           pressed && styles.tabPressed,
         ]}
       >
-        <Ionicons name="settings-outline" size={18} color="#8DA0C6" />
+        <Ionicons
+          name="settings-outline"
+          size={18}
+          color={activeKey === 'settings' ? theme.primaryStrong : theme.subtle}
+        />
+        <Text
+          style={[
+            styles.label,
+            { color: theme.subtle },
+            activeKey === 'settings' && { color: theme.primaryStrong },
+          ]}
+        >
+          Settings
+        </Text>
       </Pressable>
     </View>
   );
@@ -64,13 +102,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     borderRadius: 22,
-    backgroundColor: 'rgba(11,18,46,0.95)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
     paddingHorizontal: 8,
     paddingVertical: 8,
     marginTop: 14,
     elevation: 10,
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
   },
   tab: {
     flex: 1,
@@ -80,23 +119,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 1,
   },
-  tabActive: {
-    backgroundColor: 'rgba(82,196,255,0.18)',
-  },
   tabPressed: {
     opacity: 0.85,
   },
-  icon: {
-    color: '#8DA0C6',
-    fontSize: 13,
-    fontWeight: '700',
-  },
   label: {
-    color: '#8DA0C6',
     fontSize: 11,
     fontWeight: '700',
-  },
-  activeText: {
-    color: '#D8ECFF',
   },
 });

@@ -1,18 +1,12 @@
 /**
  * app/(tabs)/index.tsx
  *
- * On web:  CanvasKit WASM is fetched FIRST, then WenwenBase is dynamically
- *          imported so that @shopify/react-native-skia evaluates its
- *          JsiSkApi(global.CanvasKit) AFTER CanvasKit exists.
- *
- * On native: direct static import — Skia native module is always ready.
- *
  * Color controls:
  *  - Eye color, Lip color, Body color — each with 6 presets from the
  *    reference image palette. Defaults match the original Wenwen design.
  */
 
-import React, { useState, useEffect, ComponentType } from 'react';
+import React, { ComponentType, useEffect, useState } from 'react';
 import {
   Platform,
   StyleSheet,
@@ -24,14 +18,9 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-
-// ─── Props interface (mirrors WenwenBase) ────────────────────────────────────
-
-interface WenwenProps {
-  eyeColor?:  string;
-  faceColor?: string;
-  bodyColor?: string;
-}
+import { WenwenProps } from '@/components/WenwenBase';
+import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
+import { useAppTheme } from '@/src/theme/app-theme';
 
 // ─── Color presets  ──────────────────────────────────────────────────────────
 // Defaults taken directly from the reference Wenwen image:
@@ -75,27 +64,31 @@ interface SwatchRowProps {
   onSelect: (c: string) => void;
 }
 
-const SwatchRow: React.FC<SwatchRowProps> = ({ label, colors, selected, onSelect }) => (
-  <View style={row.container}>
-    <Text style={row.label}>{label}</Text>
-    <View style={row.swatches}>
-      {colors.map(({ color, label: cl }) => (
-        <TouchableOpacity
-          key={color}
-          accessibilityLabel={cl}
-          onPress={() => onSelect(color)}
-          style={[
-            row.swatch,
-            { backgroundColor: color },
-            selected === color && row.swatchSelected,
-          ]}
-        >
-          {selected === color && <View style={row.swatchDot} />}
-        </TouchableOpacity>
-      ))}
+const SwatchRow: React.FC<SwatchRowProps> = ({ label, colors, selected, onSelect }) => {
+  const theme = useAppTheme();
+
+  return (
+    <View style={row.container}>
+      <Text style={[row.label, { color: theme.muted }]}>{label}</Text>
+      <View style={row.swatches}>
+        {colors.map(({ color, label: cl }) => (
+          <TouchableOpacity
+            key={color}
+            accessibilityLabel={cl}
+            onPress={() => onSelect(color)}
+            style={[
+              row.swatch,
+              { backgroundColor: color },
+              selected === color && row.swatchSelected,
+            ]}
+          >
+            {selected === color && <View style={row.swatchDot} />}
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
-  </View>
-);
+  );
+};
 
 const row = StyleSheet.create({
   container: {
@@ -106,7 +99,6 @@ const row = StyleSheet.create({
   label: {
     width: 40,
     fontSize: 11,
-    color: '#9CA3AF',
     fontWeight: '600',
     letterSpacing: 0.4,
     textTransform: 'uppercase',
@@ -126,9 +118,9 @@ const row = StyleSheet.create({
     borderColor: 'transparent',
   },
   swatchSelected: {
-    borderColor: '#FFFFFF',
-    shadowColor: '#FFFFFF',
-    shadowOpacity: 0.6,
+    borderColor: '#319A8D',
+    shadowColor: '#319A8D',
+    shadowOpacity: 0.28,
     shadowRadius: 4,
     elevation: 4,
   },
@@ -136,13 +128,14 @@ const row = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.85)',
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
 });
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
+  const theme = useAppTheme();
   const [WenwenComponent, setWenwenComponent] =
     useState<ComponentType<WenwenProps> | null>(null);
   const { height } = useWindowDimensions();
@@ -177,8 +170,32 @@ export default function HomeScreen() {
 
   const canvasHeight = Math.max(260, Math.min(360, height * 0.34));
 
+  const handleTabPress = (tab: DashboardTabKey) => {
+    if (tab === 'customize') return;
+    if (tab === 'home') {
+      router.push({
+        pathname: '/dashboard',
+        params: { eyeColor, faceColor, bodyColor },
+      });
+      return;
+    }
+    if (tab === 'journal') {
+      router.push('/journal');
+      return;
+    }
+    if (tab === 'settings') {
+      router.push('/settings');
+      return;
+    }
+    if (tab === 'companion') {
+      router.push('/companion');
+      return;
+    }
+    router.push('/modal');
+  };
+
   return (
-    <GestureHandlerRootView style={styles.root}>
+    <GestureHandlerRootView style={[styles.root, { backgroundColor: theme.background }]}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
@@ -186,8 +203,8 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.topHeader}>
-          <Text style={styles.topTitle}>Persona Customization</Text>
-          <Text style={styles.topSubtitle}>Care-Bot Upgrade</Text>
+          <Text style={[styles.topTitle, { color: theme.text }]}>Customize Wenwen</Text>
+          <Text style={[styles.topSubtitle, { color: theme.muted }]}>Choose colors that feel calm today.</Text>
         </View>
 
         {/* ── Character canvas ── */}
@@ -204,18 +221,18 @@ export default function HomeScreen() {
         </View>
 
         {/* ── Color picker panel ── */}
-        <View style={styles.panel}>
+        <View style={[styles.panel, { backgroundColor: theme.softSurface, borderTopColor: theme.border }]}>
           <View style={styles.panelHeader}>
-            <Text style={styles.panelTitle}>✦ Customize Wenwen</Text>
+            <Text style={[styles.panelTitle, { color: theme.textStrong }]}>Color palette</Text>
             <TouchableOpacity
-              style={styles.submitButton}
+              style={[styles.submitButton, { backgroundColor: theme.primary }]}
               onPress={() =>
                 router.push({
                   pathname: '/dashboard',
                   params: { eyeColor, faceColor, bodyColor },
                 })
               }>
-              <Text style={styles.submitText}>Submit</Text>
+              <Text style={styles.submitText}>Continue</Text>
             </TouchableOpacity>
           </View>
 
@@ -239,6 +256,10 @@ export default function HomeScreen() {
           />
         </View>
       </ScrollView>
+
+      <View style={styles.bottomTabWrap}>
+        <BottomTabPlaceholder activeKey="customize" onTabPress={handleTabPress} />
+      </View>
     </GestureHandlerRootView>
   );
 }
@@ -248,13 +269,13 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#1A1A2E',
   },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
+    paddingBottom: 120,
   },
   topHeader: {
     paddingTop: 44,
@@ -262,13 +283,11 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   topTitle: {
-    color: '#F8FAFC',
     fontSize: 36,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
   topSubtitle: {
-    color: '#A8B3CF',
     fontSize: 16,
     fontWeight: '600',
     marginTop: 2,
@@ -284,9 +303,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   panel: {
-    backgroundColor: '#12122A',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.07)',
     paddingHorizontal: 20,
     paddingTop: 14,
     paddingBottom: 28,
@@ -298,23 +315,27 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   panelTitle: {
-    color: '#E2E8F0',
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
   submitButton: {
-    backgroundColor: '#E2E8F0',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 7,
   },
   submitText: {
-    color: '#12122A',
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
+  },
+  bottomTabWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 16,
   },
 });

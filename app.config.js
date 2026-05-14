@@ -5,7 +5,7 @@ export default {
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   scheme: 'wenwenapp',
-  userInterfaceStyle: 'automatic',
+  userInterfaceStyle: 'light',
   newArchEnabled: true,
   ios: {
     supportsTablet: true,
@@ -36,9 +36,6 @@ export default {
         imageWidth: 200,
         resizeMode: 'contain',
         backgroundColor: '#ffffff',
-        dark: {
-          backgroundColor: '#000000',
-        },
       },
     ],
     'expo-sqlite',

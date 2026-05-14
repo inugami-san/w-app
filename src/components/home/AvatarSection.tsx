@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useAppTheme } from '@/src/theme/app-theme';
 
 type AvatarSectionProps = {
   greeting: string;
@@ -7,15 +8,22 @@ type AvatarSectionProps = {
 };
 
 export function AvatarSection({ greeting, name = 'Friend' }: AvatarSectionProps) {
+  const theme = useAppTheme();
+
   return (
     <View style={styles.container}>
-      <View style={styles.avatarCircle}>
-        <Text style={styles.avatarLetter}>W</Text>
+      <View
+        style={[
+          styles.avatarCircle,
+          { backgroundColor: theme.primarySoft, borderColor: theme.surface },
+        ]}
+      >
+        <Text style={[styles.avatarLetter, { color: theme.primaryStrong }]}>W</Text>
       </View>
 
       <View style={styles.textWrap}>
-        <Text style={styles.greeting}>{greeting}, {name}</Text>
-        <Text style={styles.caption}>Let&apos;s keep today calm and steady.</Text>
+        <Text style={[styles.greeting, { color: theme.text }]}>{greeting}, {name}</Text>
+        <Text style={[styles.caption, { color: theme.muted }]}>Let&apos;s keep today calm and steady.</Text>
       </View>
     </View>
   );
@@ -32,14 +40,11 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#C5E9FF',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.5)',
   },
   avatarLetter: {
-    color: '#1B3550',
     fontSize: 19,
     fontWeight: '800',
   },
@@ -47,13 +52,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   greeting: {
-    color: '#F8FAFC',
     fontSize: 22,
     fontWeight: '800',
   },
   caption: {
     marginTop: 3,
-    color: '#A8B8D7',
     fontSize: 13,
     fontWeight: '600',
   },
