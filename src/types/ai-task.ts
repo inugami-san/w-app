@@ -1,12 +1,12 @@
 export const WELLNESS_CATEGORIES = [
-  'Feel calmer',
+  'Reduce stress',
   'Build routines',
   'Stay motivated',
   'Improve focus',
-  'Better sleep',
+  'Sleep better',
   'Boost mood',
   'Get healthier',
-  'Feel supported',
+  'Get support',
 ] as const;
 
 export type WellnessCategory = (typeof WELLNESS_CATEGORIES)[number];

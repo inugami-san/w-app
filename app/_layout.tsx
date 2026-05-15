@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
 
+import { getGentleReminderNotificationData } from '@/src/services/gentle-reminders';
 import { getJournalNotificationData } from '@/src/services/journal-notifications';
 import { usePreferencesStore } from '@/src/store/preferences-store';
 
@@ -18,6 +19,12 @@ export default function RootLayout() {
 
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const reminderData = getGentleReminderNotificationData(response);
+      if (reminderData) {
+        router.push('/dashboard');
+        return;
+      }
+
       const data = getJournalNotificationData(response);
       if (!data) return;
 

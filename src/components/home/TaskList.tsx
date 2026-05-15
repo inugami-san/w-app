@@ -20,6 +20,20 @@ export function TaskList({
 }: TaskListProps) {
   const theme = useAppTheme();
 
+  if (tasks.length === 0) {
+    return (
+      <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={[styles.emptyIcon, { backgroundColor: theme.primarySoft }]}>
+          <Ionicons name="leaf-outline" size={20} color={theme.primaryStrong} />
+        </View>
+        <Text style={[styles.emptyTitle, { color: theme.textStrong }]}>No tasks yet</Text>
+        <Text style={[styles.emptyBody, { color: theme.muted }]}>
+          Add a task for today.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.list}>
       {tasks.map((task) => {
@@ -29,8 +43,9 @@ export function TaskList({
           <Pressable
             key={task.id}
             accessibilityRole="button"
-            accessibilityLabel={`Toggle task ${task.title}`}
-            accessibilityHint="Long press to delete this task"
+            accessibilityLabel={`${task.title}, ${task.done ? 'finished' : 'open'}`}
+            accessibilityHint={isWaiting ? 'Please wait before completing another task' : 'Long press to delete this task'}
+            accessibilityState={{ checked: task.done, disabled: isWaiting }}
             onPress={() => onToggleTask(task)}
             onLongPress={() => onRequestDeleteTask(task)}
             delayLongPress={420}
@@ -117,5 +132,28 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 12,
     fontWeight: '600',
+  },
+  emptyCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 16,
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  emptyIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  emptyBody: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 19,
   },
 });

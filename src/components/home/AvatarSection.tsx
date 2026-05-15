@@ -23,7 +23,7 @@ export function AvatarSection({ greeting, name = 'Friend' }: AvatarSectionProps)
 
       <View style={styles.textWrap}>
         <Text style={[styles.greeting, { color: theme.text }]}>{greeting}, {name}</Text>
-        <Text style={[styles.caption, { color: theme.muted }]}>Let&apos;s keep today calm and steady.</Text>
+        <Text style={[styles.caption, { color: theme.muted }]}>Here&apos;s today&apos;s plan.</Text>
       </View>
     </View>
   );

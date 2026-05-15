@@ -1,62 +1,112 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-export default function LoginScreen() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+import { usePreferencesStore } from '@/src/store/preferences-store';
+import { useAppTheme } from '@/src/theme/app-theme';
 
-  const handleLogin = () => {
-    // In a real app, authenticate here
-    router.replace('/main');
+export default function LoginScreen() {
+  const theme = useAppTheme();
+  const hasHydrated = usePreferencesStore((state) => state.hasHydrated);
+  const hasCompletedOnboarding = usePreferencesStore((state) => state.hasCompletedOnboarding);
+  const savedName = usePreferencesStore((state) => state.displayName);
+  const completeOnboarding = usePreferencesStore((state) => state.completeOnboarding);
+  const [name, setName] = useState(savedName);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    if (hasCompletedOnboarding) {
+      router.replace('/dashboard');
+    }
+  }, [hasCompletedOnboarding, hasHydrated]);
+
+  useEffect(() => {
+    setName(savedName);
+  }, [savedName]);
+
+  const handleStart = () => {
+    const cleanName = name.trim() || 'Friend';
+    completeOnboarding(cleanName);
+    router.replace('/dashboard');
   };
 
+  if (!hasHydrated) {
+    return (
+      <View style={[styles.root, styles.centered, { backgroundColor: theme.background }]}>
+        <Text style={[styles.loadingText, { color: theme.muted }]}>Loading Wenwen...</Text>
+      </View>
+    );
+  }
+
   return (
-    <KeyboardAvoidingView 
-      style={styles.root} 
+    <KeyboardAvoidingView
+      style={[styles.root, { backgroundColor: theme.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.headerContainer}>
-          <Text style={styles.title}>Welcome to Wenwen</Text>
-          <Text style={styles.subtitle}>Your personal wellness companion</Text>
+        <View style={[styles.avatarMark, { backgroundColor: theme.primarySoft }]}>
+          <Text style={[styles.avatarLetter, { color: theme.primaryStrong }]}>W</Text>
         </View>
 
-        {/* Form */}
+        <Text style={[styles.title, { color: theme.text }]}>Set up Wenwen</Text>
+        <Text style={[styles.subtitle, { color: theme.muted }]}>
+          Track tasks, write journal notes, and use the companion chat when you need to sort something out.
+        </Text>
+
         <View style={styles.formContainer}>
           <View style={styles.inputGroup}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={[styles.label, { color: theme.subtle }]}>Name</Text>
             <TextInput
-              style={styles.input}
-              placeholder="hello@wemmsy.app"
-              placeholderTextColor="#A2ADBD"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.softBorder,
+                  color: theme.text,
+                },
+              ]}
+              placeholder="What should Wenwen call you?"
+              placeholderTextColor={theme.subtle}
+              autoCapitalize="words"
+              value={name}
+              onChangeText={setName}
+              returnKeyType="done"
+              onSubmitEditing={handleStart}
             />
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="••••••••"
-              placeholderTextColor="#A2ADBD"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
-            />
+          <View style={[styles.summaryCard, { backgroundColor: theme.softSurface, borderColor: theme.border }]}>
+            <View style={styles.summaryRow}>
+              <Ionicons name="checkmark-circle-outline" size={18} color={theme.primaryStrong} />
+              <Text style={[styles.summaryText, { color: theme.muted }]}>Tasks and progress stay on this device.</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Ionicons name="create-outline" size={18} color={theme.primaryStrong} />
+              <Text style={[styles.summaryText, { color: theme.muted }]}>Journal and chat history are organized by day.</Text>
+            </View>
           </View>
 
-          <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-            <Text style={styles.loginButtonText}>Log In</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.signupButton}>
-            <Text style={styles.signupButtonText}>Don&apos;t have an account? Sign up</Text>
-          </TouchableOpacity>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Start using Wenwen"
+            style={({ pressed }) => [
+              styles.primaryButton,
+              { backgroundColor: theme.primary },
+              pressed && styles.primaryButtonPressed,
+            ]}
+            onPress={handleStart}
+          >
+            <Text style={styles.primaryButtonText}>Start</Text>
+          </Pressable>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -66,77 +116,96 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+  },
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   container: {
     flex: 1,
-    paddingHorizontal: 30,
+    paddingHorizontal: 28,
     justifyContent: 'center',
   },
-  headerContainer: {
-    marginBottom: 50,
+  avatarMark: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 22,
+  },
+  avatarLetter: {
+    fontSize: 24,
+    fontWeight: '900',
   },
   title: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#1E2A3F',
-    marginBottom: 8,
-    letterSpacing: 0.5,
+    fontSize: 34,
+    fontWeight: '900',
+    letterSpacing: 0,
   },
   subtitle: {
     fontSize: 16,
-    color: '#2E8E82',
-    fontWeight: '500',
-    opacity: 0.9,
+    lineHeight: 23,
+    fontWeight: '600',
+    marginTop: 10,
   },
   formContainer: {
-    gap: 20,
+    gap: 16,
+    marginTop: 28,
   },
   inputGroup: {
     gap: 8,
   },
   label: {
-    color: '#657287',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
   input: {
-    backgroundColor: '#F8FBFC',
     borderWidth: 1,
-    borderColor: '#DFE7EF',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    color: '#213047',
     fontSize: 16,
+    fontWeight: '600',
   },
-  loginButton: {
-    backgroundColor: '#319A8D',
-    borderRadius: 12,
-    paddingVertical: 16,
+  summaryCard: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    gap: 10,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 9,
+  },
+  summaryText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+  primaryButton: {
+    minHeight: 52,
+    borderRadius: 16,
     alignItems: 'center',
-    marginTop: 10,
-    shadowColor: '#319A8D',
-    shadowOpacity: 0.22,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+    justifyContent: 'center',
+    marginTop: 2,
   },
-  loginButtonText: {
+  primaryButtonPressed: {
+    opacity: 0.88,
+  },
+  primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontSize: 15,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
-  signupButton: {
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  signupButtonText: {
-    color: '#657287',
+  loadingText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '700',
   },
 });

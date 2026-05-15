@@ -17,7 +17,6 @@ import { getMoodLabel } from '@/src/features/journal/moods';
 import { generateJournalSummary } from '@/src/services/gemini-journal-summary';
 import { scheduleJournalSummaryNotification } from '@/src/services/journal-notifications';
 import { useJournalStore } from '@/src/store/journal-store';
-import { useTaskStore } from '@/src/store/task-store';
 import { useAppTheme } from '@/src/theme/app-theme';
 import type { JournalSummary, JournalTaskSnapshot } from '@/src/types/journal';
 import { getLocalDateKey } from '@/src/utils/date';
@@ -40,11 +39,8 @@ export default function JournalDateScreen() {
   const params = useLocalSearchParams<{ dateKey?: string | string[]; summaryId?: string | string[] }>();
   const today = useMemo(() => getLocalDateKey(), []);
   const dateKey = getParam(params.dateKey, today);
-  const isToday = dateKey === today;
-  const tasks = useTaskStore((state) => state.tasks);
   const entry = useJournalStore((state) => state.entries[dateKey]);
   const setFeelingNote = useJournalStore((state) => state.setFeelingNote);
-  const setTaskSnapshot = useJournalStore((state) => state.setTaskSnapshot);
   const addSummary = useJournalStore((state) => state.addSummary);
   const theme = useAppTheme();
   const [note, setNote] = useState(entry?.feelingNote ?? '');
@@ -56,17 +52,9 @@ export default function JournalDateScreen() {
   const moodLabel = getMoodLabel(entry?.mood);
 
   const taskSnapshot: JournalTaskSnapshot[] = useMemo(() => {
-    const savedTasks = entry?.tasks ?? [];
-    if (savedTasks.length) return savedTasks;
-    if (!isToday) return [];
-
-    return tasks.map((task) => ({
-      id: task.id,
-      title: task.title,
-      detail: task.detail,
-      done: task.done,
-    }));
-  }, [entry?.tasks, isToday, tasks]);
+    if (dateKey === today) return [];
+    return entry?.tasks ?? [];
+  }, [dateKey, entry?.tasks, today]);
 
   const completedCount = taskSnapshot.filter((task) => task.done).length;
 
@@ -96,9 +84,6 @@ export default function JournalDateScreen() {
 
   const handleSaveNote = () => {
     setFeelingNote(dateKey, note);
-    if (isToday) {
-      setTaskSnapshot(dateKey, taskSnapshot);
-    }
   };
 
   const handleGenerateSummary = async () => {
@@ -146,7 +131,8 @@ export default function JournalDateScreen() {
         <Text style={[styles.screenTitle, { color: theme.subtle }]}>Journal</Text>
         <Text style={[styles.heroTitle, { color: theme.text }]}>{formatDateLabel(dateKey)}</Text>
         <Text style={[styles.heroSubtitle, { color: theme.muted }]}>
-          {completedCount}/{taskSnapshot.length} tasks finished{moodLabel ? ` · ${moodLabel}` : ''}
+          {taskSnapshot.length > 0 ? `${completedCount}/${taskSnapshot.length} tasks finished` : 'Journal note'}
+          {moodLabel ? ` · ${moodLabel}` : ''}
         </Text>
 
         {activeSummary && (
@@ -161,7 +147,11 @@ export default function JournalDateScreen() {
           <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Tasks from this day</Text>
           <View style={styles.taskList}>
             {taskSnapshot.length === 0 ? (
-              <Text style={[styles.emptyText, { color: theme.muted }]}>No task snapshot saved for this day yet.</Text>
+              <Text style={[styles.emptyText, { color: theme.muted }]}>
+                {dateKey === today
+                  ? "Today's tasks are saved here after the day ends."
+                  : 'No task snapshot saved for this day yet.'}
+              </Text>
             ) : (
               taskSnapshot.map((task) => (
                 <View key={task.id} style={styles.taskRow}>
@@ -181,11 +171,11 @@ export default function JournalDateScreen() {
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
-          <Text style={[styles.cardTitle, { color: theme.textStrong }]}>What did you feel?</Text>
+          <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Daily note</Text>
           <TextInput
             value={note}
             onChangeText={setNote}
-            placeholder="Write a few honest words about this day..."
+            placeholder="Write notes about this day..."
             placeholderTextColor={theme.subtle}
             multiline
             style={[
@@ -204,7 +194,7 @@ export default function JournalDateScreen() {
             <TouchableOpacity
               style={[styles.primaryButton, { backgroundColor: theme.primary }]}
               onPress={handleGenerateSummary}
-              disabled={isSummarizing || taskSnapshot.length === 0}
+              disabled={isSummarizing || (taskSnapshot.length === 0 && note.trim().length === 0)}
             >
               <Ionicons name="sparkles-outline" size={16} color="#FFFFFF" />
               <Text style={styles.primaryButtonText}>

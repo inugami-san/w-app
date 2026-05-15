@@ -16,7 +16,7 @@ export function QuoteCard({ quote }: QuoteCardProps) {
         { backgroundColor: theme.primarySoft, borderColor: theme.softBorder },
       ]}
     >
-      <Text style={[styles.kicker, { color: theme.primaryStrong }]}>Wenwen Note</Text>
+      <Text style={[styles.kicker, { color: theme.primaryStrong }]}>Daily Note</Text>
       <Text style={[styles.quote, { color: theme.textStrong }]}>{quote}</Text>
     </View>
   );

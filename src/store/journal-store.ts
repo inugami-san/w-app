@@ -13,6 +13,7 @@ import type {
 type JournalStore = {
   entries: Record<string, JournalEntry>;
   evaluationFrequency: EvaluationFrequency;
+  lastDailyReviewShownDateKey: string;
   setFeelingNote: (dateKey: string, note: string) => void;
   setMood: (dateKey: string, mood: MoodKey) => void;
   setTaskSnapshot: (dateKey: string, tasks: JournalTaskSnapshot[]) => void;
@@ -25,6 +26,7 @@ type JournalStore = {
     mood?: MoodKey;
   }) => JournalSummary;
   setEvaluationFrequency: (frequency: EvaluationFrequency) => void;
+  setDailyReviewShownDateKey: (dateKey: string) => void;
 };
 
 function createSummaryId() {
@@ -46,6 +48,7 @@ export const useJournalStore = create<JournalStore>()(
     (set, get) => ({
       entries: {},
       evaluationFrequency: 'daily',
+      lastDailyReviewShownDateKey: '',
 
       setFeelingNote: (dateKey, note) => {
         const nowIso = new Date().toISOString();
@@ -133,6 +136,10 @@ export const useJournalStore = create<JournalStore>()(
 
       setEvaluationFrequency: (frequency) => {
         set({ evaluationFrequency: frequency });
+      },
+
+      setDailyReviewShownDateKey: (dateKey) => {
+        set({ lastDailyReviewShownDateKey: dateKey });
       },
     }),
     {

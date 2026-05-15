@@ -1,13 +1,12 @@
 import Constants from 'expo-constants';
 
-import { getMoodLabel } from '@/src/features/journal/moods';
+import type { CompanionMessage } from '@/src/types/companion';
 import { buildWenwenPrompt } from '@/src/services/wenwen-persona';
-import type { JournalTaskSnapshot, MoodKey } from '@/src/types/journal';
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
-type JournalSummaryResult = {
+type CompanionSummaryResult = {
   title: string;
   body: string;
 };
@@ -21,49 +20,46 @@ function extractJsonObject(text: string): string {
   return text.slice(start, end + 1);
 }
 
-function normalizeSummary(raw: unknown): JournalSummaryResult {
+function normalizeSummary(raw: unknown): CompanionSummaryResult {
   if (!raw || typeof raw !== 'object') {
     throw new Error('Invalid AI summary shape.');
   }
 
-  const value = raw as Partial<JournalSummaryResult>;
-  const title = `${value.title ?? ''}`.trim() || 'Today mattered';
+  const value = raw as Partial<CompanionSummaryResult>;
+  const title = `${value.title ?? ''}`.trim() || 'Conversation summary';
   const body = `${value.body ?? ''}`.trim();
   if (!body) {
-    throw new Error('Generated summary body is missing.');
+    throw new Error('Generated companion summary is missing.');
   }
 
   return { title, body };
 }
 
-export async function generateJournalSummary(input: {
+export async function generateCompanionSummary(input: {
   dateKey: string;
-  tasks: JournalTaskSnapshot[];
-  feelingNote: string;
-  mood?: MoodKey;
-}): Promise<JournalSummaryResult> {
+  messages: CompanionMessage[];
+}): Promise<CompanionSummaryResult> {
   const apiKey = Constants.manifest?.extra?.GEMINI_API_KEY ?? process.env.EXPO_PUBLIC_GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error('Missing Gemini API key. Configure GEMINI_API_KEY in app.config.js extra or EXPO_PUBLIC_GEMINI_API_KEY.');
   }
 
-  const completed = input.tasks.filter((task) => task.done);
-  const unfinished = input.tasks.filter((task) => !task.done);
+  const conversation = input.messages
+    .map((message) => `${message.role === 'user' ? 'User' : 'Wenwen'}: ${message.text}`)
+    .join('\n');
+
   const prompt = buildWenwenPrompt([
-    'Task: Write a daily journal review for the user.',
+    'Task: Write a daily companion review for the user based on this Wenwen chat.',
     'Review rules:',
-    '- Mention completed and unfinished tasks neutrally.',
-    '- If there are no finished tasks, focus on what was recorded and one realistic reset.',
-    '- Mention the user note or mood only when useful.',
+    '- Mention what the user talked through without diagnosing, overpraising, or overpromising.',
+    '- Note one practical takeaway when the conversation supports it.',
     '- Keep the body to one short paragraph with 3-5 sentences.',
     '- Use a clear title, not a sentimental title.',
     'Return only valid JSON with title and body.',
     '',
     `Date: ${input.dateKey}`,
-    `Finished tasks: ${completed.map((task) => task.title).join(', ') || 'None yet'}`,
-    `Unfinished tasks: ${unfinished.map((task) => task.title).join(', ') || 'None'}`,
-    `Mood check-in: ${getMoodLabel(input.mood) ?? 'Not selected'}`,
-    `User note: ${input.feelingNote || 'No note written'}`,
+    'Conversation:',
+    conversation,
     '',
     'JSON Format:',
     '{ "title": "A clear title", "body": "One short paragraph, 3-5 sentences." }',

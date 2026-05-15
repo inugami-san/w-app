@@ -1,41 +1,135 @@
-import React, { useMemo, useState } from 'react';
+import React, { ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TextStyle,
+  TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
+import type { WenwenProps } from '@/components/WenwenBase';
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
 import { generateCompanionReply } from '@/src/services/gemini-companion-chat';
+import { generateCompanionSummary } from '@/src/services/gemini-companion-summary';
+import {
+  COMPANION_WELCOME_TEXT,
+  createCompanionMessage,
+  useCompanionStore,
+} from '@/src/store/companion-store';
 import { useAppTheme } from '@/src/theme/app-theme';
-import type { CompanionMessage } from '@/src/types/companion';
+import type { CompanionChatSummary, CompanionDayEntry, CompanionMessage } from '@/src/types/companion';
+import { getLocalDateKey } from '@/src/utils/date';
 
-function createMessage(role: CompanionMessage['role'], text: string): CompanionMessage {
-  return {
-    id: `message-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-    role,
-    text,
-    createdAt: new Date().toISOString(),
-  };
+function formatDateLabel(dateKey: string) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString(undefined, {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+function getPreviousDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() - 1);
+  return getLocalDateKey(date);
+}
+
+function hasConversation(entry: CompanionDayEntry | undefined) {
+  return entry?.messages.some((message) => message.role === 'user') ?? false;
+}
+
+function getMatchingSummary(entry: CompanionDayEntry | undefined, messages: CompanionMessage[]) {
+  return entry?.summaries.find((summary) => summary.messages.length === messages.length) ?? null;
 }
 
 export default function CompanionScreen() {
   const theme = useAppTheme();
+  const { height: windowHeight } = useWindowDimensions();
+  const today = useMemo(() => getLocalDateKey(), []);
+  const yesterday = useMemo(() => getPreviousDateKey(today), [today]);
+  const fallbackMessages = useMemo(
+    () => [createCompanionMessage('assistant', COMPANION_WELCOME_TEXT)],
+    []
+  );
+  const entries = useCompanionStore((state) => state.entries);
+  const ensureDay = useCompanionStore((state) => state.ensureDay);
+  const addMessage = useCompanionStore((state) => state.addMessage);
+  const addSummary = useCompanionStore((state) => state.addSummary);
+  const lastDailyReviewShownDateKey = useCompanionStore((state) => state.lastDailyReviewShownDateKey);
+  const setDailyReviewShownDateKey = useCompanionStore((state) => state.setDailyReviewShownDateKey);
+  const hasHydrated = useCompanionStore((state) => state.hasHydrated);
+  const todayEntry = entries[today];
+  const messages = todayEntry?.messages ?? fallbackMessages;
+  const [WenwenComponent, setWenwenComponent] = useState<ComponentType<WenwenProps> | null>(null);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [messages, setMessages] = useState<CompanionMessage[]>(() => [
-    createMessage('assistant', 'I’m here. What feels most present for you right now?'),
-  ]);
-
+  const [reviewDateKey, setReviewDateKey] = useState('');
+  const [isReviewModalVisible, setIsReviewModalVisible] = useState(false);
+  const [isReviewLoading, setIsReviewLoading] = useState(false);
+  const [reviewSummary, setReviewSummary] = useState<CompanionChatSummary | null>(null);
+  const [reviewError, setReviewError] = useState('');
+  const autoReviewAttemptedRef = useRef(false);
+  const chatScrollRef = useRef<ScrollView | null>(null);
   const canSend = input.trim().length > 0 && !isSending;
+  const chatPanelHeight = Math.min(Math.max(windowHeight * 0.46, 360), 520);
+  const webInputReset = Platform.OS === 'web' ? ({ outlineStyle: 'none' } as unknown as TextStyle) : null;
+
+  const historyKeys = useMemo(() => {
+    return Object.keys(entries)
+      .filter((dateKey) => hasConversation(entries[dateKey]))
+      .sort((a, b) => b.localeCompare(a));
+  }, [entries]);
+
+  const yesterdayEntry = entries[yesterday];
+  const hasYesterdayReview = hasConversation(yesterdayEntry);
+  const reviewEntry = reviewDateKey ? entries[reviewDateKey] : undefined;
+  const reviewMessages = reviewEntry?.messages ?? [];
+  const userMessageCount = messages.filter((message) => message.role === 'user').length;
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    ensureDay(today);
+  }, [ensureDay, hasHydrated, today]);
+
+  useEffect(() => {
+    const load = async () => {
+      if (Platform.OS === 'web') {
+        const { LoadSkiaWeb } = await import('@shopify/react-native-skia/lib/commonjs/web/LoadSkiaWeb');
+        await (LoadSkiaWeb as Function)({
+          locateFile: (file: string) =>
+            `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.40.0/bin/full/${file}`,
+        });
+      }
+
+      const mod = await import('@/components/WenwenBase');
+      setWenwenComponent(() => mod.WenwenBase as ComponentType<WenwenProps>);
+    };
+
+    load().catch(() => {
+      setWenwenComponent(null);
+    });
+  }, []);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      chatScrollRef.current?.scrollToEnd({ animated: true });
+    }, 80);
+
+    return () => clearTimeout(timeout);
+  }, [messages.length, isSending]);
 
   const handleTabPress = (tab: DashboardTabKey) => {
     if (tab === 'companion') return;
@@ -56,31 +150,81 @@ export default function CompanionScreen() {
     }
   };
 
+  const openReviewForDate = useCallback(
+    async (dateKey: string, options?: { markShownToday?: boolean }) => {
+      const entry = useCompanionStore.getState().entries[dateKey];
+      if (!hasConversation(entry)) return;
+
+      const summaryMessages = entry?.messages ?? [];
+
+      if (options?.markShownToday) {
+        setDailyReviewShownDateKey(today);
+      }
+
+      setReviewDateKey(dateKey);
+      setIsReviewModalVisible(true);
+      setReviewError('');
+
+      const existingSummary = getMatchingSummary(entry, summaryMessages);
+      if (existingSummary) {
+        setReviewSummary(existingSummary);
+        return;
+      }
+
+      setReviewSummary(null);
+      setIsReviewLoading(true);
+      try {
+        const result = await generateCompanionSummary({
+          dateKey,
+          messages: summaryMessages,
+        });
+        const summary = addSummary({
+          dateKey,
+          title: result.title,
+          body: result.body,
+          messages: summaryMessages,
+        });
+        setReviewSummary(summary);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Wenwen could not summarize this chat yet.';
+        setReviewError(message);
+      } finally {
+        setIsReviewLoading(false);
+      }
+    },
+    [addSummary, setDailyReviewShownDateKey, today]
+  );
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    if (autoReviewAttemptedRef.current) return;
+    if (lastDailyReviewShownDateKey === today) return;
+    if (!hasYesterdayReview) return;
+
+    autoReviewAttemptedRef.current = true;
+    void openReviewForDate(yesterday, { markShownToday: true });
+  }, [hasHydrated, hasYesterdayReview, lastDailyReviewShownDateKey, openReviewForDate, today, yesterday]);
+
   const handleSend = async () => {
     const cleanInput = input.trim();
     if (!cleanInput || isSending) return;
 
-    const userMessage = createMessage('user', cleanInput);
+    const userMessage = createCompanionMessage('user', cleanInput);
     const nextMessages = [...messages, userMessage];
-    setMessages(nextMessages);
+    addMessage(today, userMessage);
     setInput('');
     setIsSending(true);
 
     try {
       const reply = await generateCompanionReply(nextMessages);
-      setMessages((current) => [...current, createMessage('assistant', reply)]);
+      addMessage(today, createCompanionMessage('assistant', reply));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to reach Wenwen right now.';
-      Alert.alert('Try again gently', message);
+      Alert.alert('Try again', message);
     } finally {
       setIsSending(false);
     }
   };
-
-  const inputBorderColor = useMemo(
-    () => (input.trim() ? theme.primary : theme.softBorder),
-    [input, theme.primary, theme.softBorder]
-  );
 
   return (
     <KeyboardAvoidingView
@@ -91,78 +235,246 @@ export default function CompanionScreen() {
         <Text style={[styles.screenTitle, { color: theme.subtle }]}>Companion</Text>
         <Text style={[styles.heroTitle, { color: theme.text }]}>Talk with Wenwen</Text>
         <Text style={[styles.heroSubtitle, { color: theme.muted }]}>
-          A calm space for one thought, one feeling, or one small next step.
+          Chat about your day, tasks, or what you want to sort out.
         </Text>
 
-        <View style={styles.messageList}>
-          {messages.map((message) => {
-            const isUser = message.role === 'user';
-            return (
-              <View
-                key={message.id}
-                style={[
-                  styles.messageBubble,
-                  {
-                    alignSelf: isUser ? 'flex-end' : 'flex-start',
-                    backgroundColor: isUser ? theme.primary : theme.surface,
-                    borderColor: isUser ? theme.primary : theme.border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.messageText,
-                    { color: isUser ? '#FFFFFF' : theme.textStrong },
-                  ]}
-                >
-                  {message.text}
-                </Text>
-              </View>
-            );
-          })}
-
-          {isSending && (
-            <View
-              style={[
-                styles.messageBubble,
-                { alignSelf: 'flex-start', backgroundColor: theme.surface, borderColor: theme.border },
-              ]}
-            >
-              <Text style={[styles.messageText, { color: theme.muted }]}>Wenwen is thinking...</Text>
-            </View>
-          )}
+        <View style={styles.avatarStage}>
+          <View style={[styles.avatarShell, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
+            {WenwenComponent ? (
+              <WenwenComponent eyeColor={theme.primary} faceColor={theme.surface} bodyColor={theme.softSurface} />
+            ) : (
+              <Text style={[styles.avatarFallback, { color: theme.primaryStrong }]}>W</Text>
+            )}
+          </View>
         </View>
-      </ScrollView>
 
-      <View style={[styles.composerWrap, { backgroundColor: theme.background }]}>
         <View
           style={[
-            styles.inputWrap,
+            styles.chatPanel,
             {
-              backgroundColor: theme.surface,
-              borderColor: inputBorderColor,
+              height: chatPanelHeight,
+              backgroundColor: theme.softSurface,
+              borderColor: theme.border,
+              shadowColor: theme.shadow,
             },
           ]}
         >
-          <TextInput
-            value={input}
-            onChangeText={setInput}
-            placeholder="Write what you feel..."
-            placeholderTextColor={theme.subtle}
-            multiline
-            style={[styles.input, { color: theme.text }]}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Send message"
-            disabled={!canSend}
-            onPress={handleSend}
-            style={[styles.sendButton, { backgroundColor: canSend ? theme.primary : theme.softSurface }]}
+          <View style={styles.chatHeader}>
+            <View>
+              <Text style={[styles.chatTitle, { color: theme.textStrong }]}>Today&apos;s chat</Text>
+              <Text style={[styles.chatMeta, { color: theme.muted }]}>
+                {userMessageCount === 0 ? 'No message yet' : `${userMessageCount} message${userMessageCount === 1 ? '' : 's'} from you`}
+              </Text>
+            </View>
+            {hasConversation(todayEntry) && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Summarize today's chat"
+                onPress={() => openReviewForDate(today)}
+                style={[styles.summaryIconButton, { backgroundColor: theme.primarySoft }]}
+              >
+                <Ionicons name="sparkles-outline" size={18} color={theme.primaryStrong} />
+              </Pressable>
+            )}
+          </View>
+
+          <ScrollView
+            ref={chatScrollRef}
+            style={styles.chatScroll}
+            contentContainerStyle={styles.messageList}
+            showsVerticalScrollIndicator={false}
           >
-            <Ionicons name="send" size={16} color={canSend ? '#FFFFFF' : theme.subtle} />
-          </Pressable>
+            {messages.map((message) => {
+              const isUser = message.role === 'user';
+              return (
+                <View
+                  key={message.id}
+                  style={[styles.messageRow, isUser && styles.userMessageRow]}
+                >
+                  {!isUser && (
+                    <View style={[styles.messageAvatar, { backgroundColor: theme.primarySoft }]}>
+                      <Text style={[styles.messageAvatarText, { color: theme.primaryStrong }]}>W</Text>
+                    </View>
+                  )}
+                  <View
+                    style={[
+                      styles.messageBubble,
+                      {
+                        backgroundColor: isUser ? theme.primary : theme.surface,
+                        borderColor: isUser ? theme.primary : theme.softBorder,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.messageText, { color: isUser ? '#FFFFFF' : theme.textStrong }]}>
+                      {message.text}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+
+            {isSending && (
+              <View style={styles.messageRow}>
+                <View style={[styles.messageAvatar, { backgroundColor: theme.primarySoft }]}>
+                  <Text style={[styles.messageAvatarText, { color: theme.primaryStrong }]}>W</Text>
+                </View>
+                <View style={[styles.messageBubble, { backgroundColor: theme.surface, borderColor: theme.softBorder }]}>
+                  <Text style={[styles.messageText, { color: theme.muted }]}>Wenwen is thinking...</Text>
+                </View>
+              </View>
+            )}
+          </ScrollView>
+
+          <View style={[styles.composerBar, { backgroundColor: theme.surface, borderColor: theme.softBorder }]}>
+            <TextInput
+              value={input}
+              onChangeText={setInput}
+              placeholder="Type a thought or update..."
+              placeholderTextColor={theme.subtle}
+              multiline
+              style={[styles.input, { color: theme.text }, webInputReset]}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
+              disabled={!canSend}
+              onPress={handleSend}
+              style={[styles.sendButton, { backgroundColor: canSend ? theme.primary : theme.softSurface }]}
+            >
+              <Ionicons name="send" size={16} color={canSend ? '#FFFFFF' : theme.subtle} />
+            </Pressable>
+          </View>
         </View>
-      </View>
+
+        <View style={styles.historyHeader}>
+          <View>
+            <Text style={[styles.historyTitle, { color: theme.textStrong }]}>Chat history</Text>
+            <Text style={[styles.historySubtitle, { color: theme.muted }]}>Daily conversations and AI reviews.</Text>
+          </View>
+          {hasYesterdayReview && (
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Show yesterday chat review"
+              style={[styles.historyAction, { backgroundColor: theme.primarySoft }]}
+              onPress={() => openReviewForDate(yesterday)}
+            >
+              <Text style={[styles.historyActionText, { color: theme.primaryStrong }]}>Yesterday</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {historyKeys.length === 0 ? (
+          <View style={[styles.emptyHistoryCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Ionicons name="chatbubble-ellipses-outline" size={22} color={theme.primaryStrong} />
+            <Text style={[styles.emptyTitle, { color: theme.textStrong }]}>No chat history yet</Text>
+            <Text style={[styles.emptyBody, { color: theme.muted }]}>
+              Send a message to start today&apos;s chat history.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.historyList}>
+            {historyKeys.map((dateKey) => {
+              const entry = entries[dateKey];
+              const messagesForDay = entry?.messages ?? [];
+              const dayUserMessageCount = messagesForDay.filter((message) => message.role === 'user').length;
+              const summary = getMatchingSummary(entry, messagesForDay);
+
+              return (
+                <Pressable
+                  key={dateKey}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open chat review for ${formatDateLabel(dateKey)}`}
+                  onPress={() => openReviewForDate(dateKey)}
+                  style={({ pressed }) => [
+                    styles.historyCard,
+                    { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow },
+                    pressed && styles.historyCardPressed,
+                  ]}
+                >
+                  <View style={[styles.historyIcon, { backgroundColor: theme.primarySoft }]}>
+                    <Ionicons name="chatbubble-outline" size={19} color={theme.primaryStrong} />
+                  </View>
+                  <View style={styles.historyTextWrap}>
+                    <Text style={[styles.historyDate, { color: theme.textStrong }]}>
+                      {formatDateLabel(dateKey)}
+                      {dateKey === today ? ' · Today' : ''}
+                    </Text>
+                    <Text style={[styles.historyMeta, { color: theme.muted }]}>
+                      {dayUserMessageCount} message{dayUserMessageCount === 1 ? '' : 's'} from you
+                      {summary ? ' · Summary ready' : ''}
+                    </Text>
+                    {summary && (
+                      <Text style={[styles.historySummary, { color: theme.primaryStrong }]}>{summary.title}</Text>
+                    )}
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={theme.subtle} />
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </ScrollView>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={isReviewModalVisible}
+        onRequestClose={() => setIsReviewModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.reviewModalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleWrap}>
+                <Text style={[styles.modalKicker, { color: theme.subtle }]}>
+                  {reviewDateKey ? formatDateLabel(reviewDateKey) : 'Companion'}
+                </Text>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Daily review</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Close chat review"
+                onPress={() => setIsReviewModalVisible(false)}
+                style={[styles.closeButton, { backgroundColor: theme.softSurface }]}
+              >
+                <Ionicons name="close" size={20} color={theme.muted} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.reviewScrollContent}>
+              {isReviewLoading ? (
+                <View style={styles.loadingBlock}>
+                  <ActivityIndicator color={theme.primaryStrong} />
+                  <Text style={[styles.loadingText, { color: theme.muted }]}>Writing the review...</Text>
+                </View>
+              ) : reviewSummary ? (
+                <View style={[styles.summaryCard, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
+                  <Text style={[styles.summaryTitle, { color: theme.text }]}>{reviewSummary.title}</Text>
+                  <Text style={[styles.summaryBody, { color: theme.muted }]}>{reviewSummary.body}</Text>
+                </View>
+              ) : (
+                <View style={[styles.summaryCard, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}>
+                  <Text style={[styles.summaryTitle, { color: theme.text }]}>Saved for later</Text>
+                  <Text style={[styles.summaryBody, { color: theme.muted }]}>
+                    {reviewError || 'The AI review could not be written yet, but the chat is saved.'}
+                  </Text>
+                </View>
+              )}
+
+              <View style={[styles.reviewSection, { borderColor: theme.softBorder }]}>
+                <Text style={[styles.reviewSectionTitle, { color: theme.textStrong }]}>Chat log</Text>
+                {reviewMessages.map((message) => (
+                  <View key={message.id} style={styles.reviewMessageRow}>
+                    <Text style={[styles.reviewRole, { color: message.role === 'user' ? theme.primaryStrong : theme.subtle }]}>
+                      {message.role === 'user' ? 'You' : 'Wenwen'}
+                    </Text>
+                    <Text style={[styles.reviewMessageText, { color: theme.muted }]}>{message.text}</Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.bottomTabWrap}>
         <BottomTabPlaceholder activeKey="companion" onTabPress={handleTabPress} />
@@ -178,7 +490,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingTop: 56,
     paddingHorizontal: 20,
-    paddingBottom: 230,
+    paddingBottom: 124,
   },
   screenTitle: {
     fontSize: 14,
@@ -196,49 +508,113 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 20,
     marginTop: 4,
-    marginBottom: 16,
+    marginBottom: 14,
+  },
+  avatarStage: {
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  avatarShell: {
+    width: 132,
+    height: 112,
+    borderRadius: 34,
+    borderWidth: 1,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarFallback: {
+    fontSize: 34,
+    fontWeight: '900',
+  },
+  chatPanel: {
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 14,
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  chatTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  chatMeta: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  summaryIconButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chatScroll: {
+    flex: 1,
   },
   messageList: {
+    paddingVertical: 4,
     gap: 10,
   },
-  messageBubble: {
-    maxWidth: '86%',
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-  },
-  messageText: {
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 21,
-  },
-  composerWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 84,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
-  inputWrap: {
-    minHeight: 54,
-    maxHeight: 120,
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingLeft: 14,
-    paddingRight: 8,
-    paddingVertical: 8,
+  messageRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
   },
-  input: {
-    flex: 1,
-    maxHeight: 90,
+  userMessageRow: {
+    justifyContent: 'flex-end',
+  },
+  messageAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  messageAvatarText: {
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  messageBubble: {
+    maxWidth: '82%',
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
+  },
+  messageText: {
     fontSize: 14,
     fontWeight: '600',
-    paddingVertical: 7,
+    lineHeight: 20,
+  },
+  composerBar: {
+    minHeight: 48,
+    maxHeight: 104,
+    borderRadius: 24,
+    borderWidth: 1,
+    paddingLeft: 15,
+    paddingRight: 6,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    marginTop: 12,
+  },
+  input: {
+    flex: 1,
+    maxHeight: 82,
+    fontSize: 14,
+    fontWeight: '600',
+    paddingVertical: 8,
     textAlignVertical: 'top',
   },
   sendButton: {
@@ -247,6 +623,181 @@ const styles = StyleSheet.create({
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 22,
+    marginBottom: 10,
+  },
+  historyTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  historySubtitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 3,
+  },
+  historyAction: {
+    minHeight: 36,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyActionText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  emptyHistoryCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 16,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  emptyBody: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
+  },
+  historyList: {
+    gap: 10,
+  },
+  historyCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 1,
+  },
+  historyCardPressed: {
+    opacity: 0.88,
+  },
+  historyIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  historyTextWrap: {
+    flex: 1,
+  },
+  historyDate: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  historyMeta: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  historySummary: {
+    fontSize: 12,
+    fontWeight: '800',
+    marginTop: 5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(8, 12, 18, 0.58)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  reviewModalCard: {
+    maxHeight: '82%',
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 18,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  modalTitleWrap: {
+    flex: 1,
+  },
+  modalKicker: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '900',
+    marginTop: 4,
+  },
+  closeButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewScrollContent: {
+    paddingTop: 14,
+    gap: 12,
+  },
+  loadingBlock: {
+    minHeight: 118,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  loadingText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  summaryCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+  },
+  summaryTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  summaryBody: {
+    fontSize: 14,
+    lineHeight: 21,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  reviewSection: {
+    borderTopWidth: 1,
+    paddingTop: 12,
+  },
+  reviewSectionTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  reviewMessageRow: {
+    marginBottom: 10,
+  },
+  reviewRole: {
+    fontSize: 12,
+    fontWeight: '900',
+    marginBottom: 3,
+  },
+  reviewMessageText: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600',
   },
   bottomTabWrap: {
     position: 'absolute',

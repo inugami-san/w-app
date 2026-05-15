@@ -41,14 +41,14 @@ export function TaskComposer({
           <Ionicons name="leaf-outline" size={18} color={theme.primaryStrong} />
         </View>
         <View style={styles.introText}>
-          <Text style={[styles.heading, { color: theme.text }]}>Create one small step</Text>
-          <Text style={[styles.caption, { color: theme.muted }]}>Keep it easy enough for today.</Text>
+          <Text style={[styles.heading, { color: theme.text }]}>Create a task</Text>
+          <Text style={[styles.caption, { color: theme.muted }]}>Add something you want to get done today.</Text>
         </View>
       </View>
       <TextInput
         value={title}
         onChangeText={setTitle}
-        placeholder="What would help right now?"
+        placeholder="What needs doing?"
         placeholderTextColor={theme.subtle}
         style={[
           styles.input,
@@ -75,14 +75,14 @@ export function TaskComposer({
         style={({ pressed }) => [styles.button, { backgroundColor: theme.primary }, pressed && styles.buttonPressed]}
       >
         <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-        <Text style={styles.buttonText}>Add Gentle Task</Text>
+        <Text style={styles.buttonText}>Add Task</Text>
       </Pressable>
 
       <View style={[styles.aiSection, { borderTopColor: theme.border }]}>
         <View style={styles.aiHeaderRow}>
           <View>
             <Text style={[styles.aiHeading, { color: theme.textStrong }]}>Need an idea?</Text>
-            <Text style={[styles.aiCaption, { color: theme.muted }]}>Choose a focus and Wenwen can suggest tasks.</Text>
+            <Text style={[styles.aiCaption, { color: theme.muted }]}>Choose a focus and generate task ideas.</Text>
           </View>
         </View>
         <View style={styles.chipsWrap}>
@@ -138,7 +138,7 @@ export function TaskComposer({
         <View style={styles.suggestionFooter}>
           <Text style={[styles.suggestionCount, { color: theme.muted }]}>
             {suggestedTasks.length === 0
-              ? 'Suggestions open for review right away.'
+              ? 'Suggestions open in review.'
               : 'Suggestions are ready.'}
           </Text>
         </View>

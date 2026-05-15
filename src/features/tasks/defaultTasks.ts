@@ -25,7 +25,7 @@ export function createDefaultTasks(now = new Date()): TaskItem[] {
     {
       id: 'task-breathing',
       title: 'Breathing exercise',
-      detail: 'Do a 5-minute calm breathing cycle.',
+      detail: 'Do a 5-minute breathing exercise.',
       due: 'Today, 3:00 PM',
       done: false,
       createdAt,

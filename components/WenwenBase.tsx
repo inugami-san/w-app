@@ -135,14 +135,6 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     return p;
   }, [FOOT_W, FOOT_H]);
 
-  const cloudPath = useMemo(
-    () =>
-      Skia.Path.MakeFromSVGString(
-        'M 0 10 C -10 10 -10 0 0 0 C 0 -15 20 -15 20 0 C 30 0 30 10 20 10 Z'
-      ) || Skia.Path.Make(),
-    []
-  );
-
   const faceBridgePath = useMemo(() => {
     const p = Skia.Path.Make();
     p.moveTo(L_EYE_X + EYE_R * 0.2, EYE_Y);
@@ -441,10 +433,6 @@ export const WenwenBase: React.FC<WenwenProps> = ({
 
                   <RoundedRect x={I_CENTER - HI_STROKE / 2} y={HI_TOP} width={HI_STROKE} height={HI_HEIGHT} r={HI_STROKE / 2} color="#7FF4FF" />
                 </Group>
-              </Group>
-
-              <Group transform={[{ translateX: CX + CW * 0.22 }, { translateY: CY + CH * 0.14 }, { scale: 0.85 }]}> 
-                <Path path={cloudPath} color="#64748B" style="stroke" strokeWidth={2.5} strokeJoin="round" />
               </Group>
             </Group>
           </Group>

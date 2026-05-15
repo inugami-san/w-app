@@ -1,23 +1,25 @@
 import Constants from 'expo-constants';
 import type { SuggestedTask, WellnessCategory } from '@/src/types/ai-task';
+import { buildWenwenPrompt } from '@/src/services/wenwen-persona';
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
-const BASE_PROMPT = [
-  'Generate 5 simple, realistic, low-pressure tasks based on the selected wellness category:',
-  'Feel calmer, Build routines, Stay motivated, Improve focus, Better sleep, Boost mood, Get healthier, Feel supported.',
+const BASE_PROMPT = buildWenwenPrompt([
+  'Task: Generate 5 simple, realistic tasks based on the selected wellness category.',
+  'Categories: Reduce stress, Build routines, Stay motivated, Improve focus, Sleep better, Boost mood, Get healthier, Get support.',
   '',
-  'Each task must be:',
-  'Easy to complete in 5–15 minutes',
-  'Positive and encouraging',
-  'Practical for everyday life',
-  'Suitable for beginners',
-  'No extreme advice',
-  'Different from the other tasks',
-  'Do not number the tasks.',
-  'Do not prefix titles with numbers, bullets, dashes, or labels.',
-  'Return only valid JSON',
+  'Task rules:',
+  '- Each task must be easy to complete in 5-15 minutes.',
+  '- Use clear action verbs and everyday language.',
+  '- Keep titles short, specific, and practical.',
+  '- Avoid cute, therapy-like, or overly soft titles.',
+  '- Avoid words like gentle, mindful, soothing, healing, tiny, little, and self-care unless the category makes them necessary.',
+  '- No extreme advice.',
+  '- Every task must be different from the others.',
+  '- Do not number the tasks.',
+  '- Do not prefix titles with numbers, bullets, dashes, or labels.',
+  '- Return only valid JSON.',
   '',
   'JSON Format:',
   '[',
@@ -27,7 +29,7 @@ const BASE_PROMPT = [
   '    "datetime_added": ""',
   '  }',
   ']',
-].join('\n');
+]);
 
 function extractJsonArray(text: string): string {
   const start = text.indexOf('[');
@@ -56,7 +58,7 @@ function normalizeSuggestion(raw: unknown): SuggestedTask {
     `${value.optional_detail ?? ''}`
       .trim()
       .replace(/^(\d+[\).:-]?\s*|[-•]\s*)/i, '')
-      .trim() || 'A gentle 5–15 minute task.';
+      .trim() || 'A 5-15 minute task.';
   const datetimeAdded = `${value.datetime_added ?? ''}`.trim() || new Date().toISOString();
 
   return {

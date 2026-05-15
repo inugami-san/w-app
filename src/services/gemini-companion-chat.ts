@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 
 import type { CompanionMessage } from '@/src/types/companion';
+import { buildWenwenPrompt } from '@/src/services/wenwen-persona';
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
@@ -16,9 +17,9 @@ export async function generateCompanionReply(messages: CompanionMessage[]): Prom
 
   if (isCrisisMessage(latestUserMessage)) {
     return [
-      'That sounds very heavy, and I’m glad you said it here.',
-      'Please reach out to emergency services or a trusted person near you right now. If you are in the U.S. or Canada, call or text 988 for immediate crisis support.',
-      'You do not have to handle this moment alone.',
+      'That sounds urgent, and I am glad you said it here.',
+      'Please contact emergency services or a trusted person near you right now.',
+      'If you are in the U.S. or Canada, call or text 988 for immediate crisis support.',
     ].join(' ');
   }
 
@@ -32,17 +33,17 @@ export async function generateCompanionReply(messages: CompanionMessage[]): Prom
     .map((message) => `${message.role === 'user' ? 'User' : 'Wenwen'}: ${message.text}`)
     .join('\n');
 
-  const prompt = [
-    'You are Wenwen, a warm AI wellness companion.',
-    'You are not a therapist, doctor, or crisis service.',
-    'Tone: warm, validating, concise, emotionally safe, practical, hopeful, grounded.',
-    'Do not diagnose. Do not shame. Do not create dependency.',
-    'Reply in 1-4 short sentences.',
-    'If helpful, suggest one tiny next step.',
+  const prompt = buildWenwenPrompt([
+    'Task: Reply to the latest user message using the recent conversation.',
+    'Response rules:',
+    '- Reply in 1-4 short sentences.',
+    '- If emotion is present, acknowledge it once without overexplaining it.',
+    '- If useful, suggest one concrete next action the user can do today.',
+    '- Do not end every reply with a question.',
     '',
-    'Conversation:',
+    'Recent conversation:',
     history,
-  ].join('\n');
+  ]);
 
   const response = await fetch(GEMINI_ENDPOINT, {
     method: 'POST',
@@ -74,5 +75,5 @@ export async function generateCompanionReply(messages: CompanionMessage[]): Prom
       ?.map((part: { text?: string }) => part?.text ?? '')
       .join('') ?? '';
 
-  return rawText.trim() || 'I’m here with you. Want to take one small step together?';
+  return rawText.trim() || 'I’m here. What would you like to work through?';
 }

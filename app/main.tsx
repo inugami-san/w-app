@@ -204,7 +204,7 @@ export default function HomeScreen() {
       >
         <View style={styles.topHeader}>
           <Text style={[styles.topTitle, { color: theme.text }]}>Customize Wenwen</Text>
-          <Text style={[styles.topSubtitle, { color: theme.muted }]}>Choose colors that feel calm today.</Text>
+          <Text style={[styles.topSubtitle, { color: theme.muted }]}>Choose Wenwen&apos;s colors.</Text>
         </View>
 
         {/* ── Character canvas ── */}

@@ -34,7 +34,7 @@ export async function scheduleJournalSummaryNotification(summary: JournalSummary
 
   return Notifications.scheduleNotificationAsync({
     content: {
-      title: 'Wenwen note is ready',
+      title: 'Daily review is ready',
       body: summary.title,
       data: {
         type: 'journal-summary',

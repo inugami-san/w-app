@@ -41,6 +41,9 @@ export function ProgressBar({ completed, total }: ProgressBarProps) {
 
   return (
     <View
+      accessibilityRole="progressbar"
+      accessibilityLabel="Today's task progress"
+      accessibilityValue={{ min: 0, max: total, now: completed }}
       style={[
         styles.container,
         { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow },

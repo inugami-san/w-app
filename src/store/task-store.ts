@@ -106,7 +106,9 @@ export const useTaskStore = create<TaskStore>()(
 
         if (!force && lastDailyReset === today) return;
 
-        archiveTasksForDate(force ? today : lastDailyReset || today, tasks);
+        if (lastDailyReset && lastDailyReset !== today) {
+          archiveTasksForDate(lastDailyReset, tasks);
+        }
 
         const nowIso = new Date().toISOString();
         set((state) => ({

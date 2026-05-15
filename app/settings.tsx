@@ -1,11 +1,12 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
+import { REMINDER_TIME_OPTIONS, syncGentleReminder } from '@/src/services/gentle-reminders';
 import { useJournalStore } from '@/src/store/journal-store';
-import { type AppThemeMode, usePreferencesStore } from '@/src/store/preferences-store';
+import { type AppThemeMode, type ReminderTimeKey, usePreferencesStore } from '@/src/store/preferences-store';
 import { useAppTheme } from '@/src/theme/app-theme';
 import type { EvaluationFrequency } from '@/src/types/journal';
 
@@ -17,17 +18,17 @@ const FREQUENCY_OPTIONS: {
   {
     value: 'daily',
     title: 'Daily',
-    detail: 'Wenwen can evaluate each day from tasks and journal notes.',
+    detail: 'Review each day from tasks and journal notes.',
   },
   {
     value: 'every3days',
     title: 'Every 3 days',
-    detail: 'A calmer rhythm with a little more context between notes.',
+    detail: 'More context between summaries.',
   },
   {
     value: 'weekly',
     title: 'Weekly',
-    detail: 'A broader reflection across the week.',
+    detail: 'A broader review across the week.',
   },
 ];
 
@@ -40,22 +41,29 @@ const THEME_OPTIONS: {
   {
     value: 'light',
     title: 'Light',
-    detail: 'Default calm white appearance.',
+    detail: 'Default white appearance.',
     icon: 'sunny-outline',
   },
   {
     value: 'dark',
     title: 'Dark',
-    detail: 'A softer low-light app shell.',
+    detail: 'Low-light app shell.',
     icon: 'moon-outline',
   },
 ];
 
 export default function SettingsScreen() {
+  const [isReminderBusy, setIsReminderBusy] = useState(false);
   const frequency = useJournalStore((state) => state.evaluationFrequency);
   const setFrequency = useJournalStore((state) => state.setEvaluationFrequency);
   const themeMode = usePreferencesStore((state) => state.themeMode);
   const setThemeMode = usePreferencesStore((state) => state.setThemeMode);
+  const displayName = usePreferencesStore((state) => state.displayName);
+  const setDisplayName = usePreferencesStore((state) => state.setDisplayName);
+  const remindersEnabled = usePreferencesStore((state) => state.remindersEnabled);
+  const reminderTime = usePreferencesStore((state) => state.reminderTime);
+  const reminderNotificationId = usePreferencesStore((state) => state.reminderNotificationId);
+  const setReminderSettings = usePreferencesStore((state) => state.setReminderSettings);
   const theme = useAppTheme();
 
   const handleTabPress = (tab: DashboardTabKey) => {
@@ -79,14 +87,70 @@ export default function SettingsScreen() {
     router.push('/modal');
   };
 
+  const handleUpdateReminder = async (enabled: boolean, time: ReminderTimeKey = reminderTime) => {
+    if (isReminderBusy) return;
+
+    setIsReminderBusy(true);
+    try {
+      const notificationId = await syncGentleReminder({
+        enabled,
+        time,
+        existingNotificationId: reminderNotificationId,
+      });
+
+      if (enabled && !notificationId) {
+        Alert.alert('Reminder not enabled', 'Notifications are not available or permission was not granted.');
+        setReminderSettings({
+          remindersEnabled: false,
+          reminderTime: time,
+          reminderNotificationId: null,
+        });
+        return;
+      }
+
+      setReminderSettings({
+        remindersEnabled: enabled,
+        reminderTime: time,
+        reminderNotificationId: notificationId,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update reminders right now.';
+      Alert.alert('Reminder update failed', message);
+    } finally {
+      setIsReminderBusy(false);
+    }
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={[styles.screenTitle, { color: theme.subtle }]}>Settings</Text>
-        <Text style={[styles.heroTitle, { color: theme.text }]}>Wenwen rhythm</Text>
+        <Text style={[styles.heroTitle, { color: theme.text }]}>Preferences</Text>
         <Text style={[styles.heroSubtitle, { color: theme.muted }]}>
-          Choose how often Wenwen reflects on tasks and notes.
+          Choose how often the app reviews tasks and notes.
         </Text>
+
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Profile</Text>
+          <Text style={[styles.cardCaption, { color: theme.muted }]}>
+            Update the name shown on Home.
+          </Text>
+          <TextInput
+            value={displayName}
+            onChangeText={setDisplayName}
+            placeholder="Name"
+            placeholderTextColor={theme.subtle}
+            autoCapitalize="words"
+            style={[
+              styles.profileInput,
+              {
+                backgroundColor: theme.softSurface,
+                borderColor: theme.softBorder,
+                color: theme.text,
+              },
+            ]}
+          />
+        </View>
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Appearance</Text>
@@ -151,7 +215,7 @@ export default function SettingsScreen() {
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Evaluation frequency</Text>
           <Text style={[styles.cardCaption, { color: theme.muted }]}>
-            This controls when Wenwen should summarize finished tasks, unfinished tasks, and journal notes.
+            This controls when the app summarizes finished tasks, unfinished tasks, and journal notes.
           </Text>
 
           <View style={styles.optionList}>
@@ -200,6 +264,89 @@ export default function SettingsScreen() {
             })}
           </View>
         </View>
+
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.optionTextWrap}>
+              <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Reminders</Text>
+              <Text style={[styles.cardCaption, { color: theme.muted }]}>
+                Daily reminder for tasks and check-ins.
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: remindersEnabled, disabled: isReminderBusy }}
+              accessibilityLabel="Enable reminders"
+              disabled={isReminderBusy}
+              onPress={() => handleUpdateReminder(!remindersEnabled)}
+              style={[
+                styles.switchTrack,
+                {
+                  backgroundColor: remindersEnabled ? theme.primary : theme.softSurface,
+                  borderColor: remindersEnabled ? theme.primary : theme.softBorder,
+                },
+                isReminderBusy && styles.optionDisabled,
+              ]}
+            >
+              <View
+                style={[
+                  styles.switchThumb,
+                  {
+                    backgroundColor: remindersEnabled ? '#FFFFFF' : theme.subtle,
+                    transform: [{ translateX: remindersEnabled ? 18 : 0 }],
+                  },
+                ]}
+              />
+            </Pressable>
+          </View>
+
+          <View style={styles.timeGrid}>
+            {REMINDER_TIME_OPTIONS.map((option) => {
+              const isActive = reminderTime === option.value;
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: isActive, disabled: isReminderBusy }}
+                  accessibilityLabel={`${option.title} reminder`}
+                  disabled={isReminderBusy}
+                  onPress={() => handleUpdateReminder(remindersEnabled, option.value)}
+                  style={[
+                    styles.timeOption,
+                    {
+                      backgroundColor: theme.softSurface,
+                      borderColor: theme.softBorder,
+                    },
+                    isActive && {
+                      backgroundColor: theme.primarySoft,
+                      borderColor: theme.primary,
+                    },
+                    isReminderBusy && styles.optionDisabled,
+                  ]}
+                >
+                  <Text style={[styles.timeTitle, { color: isActive ? theme.primaryStrong : theme.textStrong }]}>
+                    {option.title}
+                  </Text>
+                  <Text style={[styles.timeDetail, { color: theme.muted }]}>{option.detail}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.dataRow}>
+            <View style={[styles.dataIcon, { backgroundColor: theme.primarySoft }]}>
+              <Ionicons name="shield-checkmark-outline" size={18} color={theme.primaryStrong} />
+            </View>
+            <View style={styles.optionTextWrap}>
+              <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Data safety</Text>
+              <Text style={[styles.cardCaption, { color: theme.muted }]}>
+                Tasks, journals, chat history, and preferences are stored on this device. AI summaries only use the text needed to write the review.
+              </Text>
+            </View>
+          </View>
+        </View>
       </ScrollView>
 
       <View style={styles.bottomTabWrap}>
@@ -241,6 +388,12 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 12,
   },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   cardTitle: {
     fontSize: 16,
     fontWeight: '800',
@@ -255,6 +408,16 @@ const styles = StyleSheet.create({
     marginTop: 12,
     gap: 10,
   },
+  profileInput: {
+    minHeight: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    fontWeight: '700',
+    marginTop: 12,
+  },
   optionRow: {
     borderRadius: 14,
     borderWidth: 1,
@@ -262,6 +425,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  optionDisabled: {
+    opacity: 0.56,
   },
   optionTextWrap: {
     flex: 1,
@@ -282,6 +448,53 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 17,
     marginTop: 3,
+  },
+  switchTrack: {
+    width: 52,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    padding: 3,
+    justifyContent: 'center',
+  },
+  switchThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+  },
+  timeGrid: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 14,
+  },
+  timeOption: {
+    flex: 1,
+    minHeight: 68,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 10,
+    justifyContent: 'center',
+  },
+  timeTitle: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  timeDetail: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  dataRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  dataIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   bottomTabWrap: {
     position: 'absolute',

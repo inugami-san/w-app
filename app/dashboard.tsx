@@ -21,9 +21,11 @@ import { ProgressBar } from '@/src/components/home/ProgressBar';
 import { QuoteCard } from '@/src/components/home/QuoteCard';
 import { TaskComposer } from '@/src/components/home/TaskComposer';
 import { TaskList } from '@/src/components/home/TaskList';
+import { WeeklyProgressCard } from '@/src/components/home/WeeklyProgressCard';
 import { MOOD_OPTIONS } from '@/src/features/journal/moods';
 import { generateGeminiTaskSuggestions } from '@/src/services/gemini-task-suggestions';
 import { useJournalStore } from '@/src/store/journal-store';
+import { usePreferencesStore } from '@/src/store/preferences-store';
 import { useTaskStore } from '@/src/store/task-store';
 import { WELLNESS_CATEGORIES, type SuggestedTask, type WellnessCategory } from '@/src/types/ai-task';
 import type { MoodKey } from '@/src/types/journal';
@@ -55,6 +57,7 @@ export default function DashboardScreen() {
   const [suggestedTasks, setSuggestedTasks] = useState<SuggestedTask[]>([]);
   const [isSuggestionReviewOpen, setIsSuggestionReviewOpen] = useState(false);
   const [completionCooldownUntil, setCompletionCooldownUntil] = useState(0);
+  const [completionFeedback, setCompletionFeedback] = useState('');
   const [clockNow, setClockNow] = useState(() => Date.now());
   const eyeColor = getParam(params.eyeColor, '#00D4C2');
   const faceColor = getParam(params.faceColor, '#E2E8F0');
@@ -68,6 +71,7 @@ export default function DashboardScreen() {
   const toggleTask = useTaskStore((state) => state.toggleTask);
   const deleteTask = useTaskStore((state) => state.deleteTask);
   const resetDailyTasks = useTaskStore((state) => state.resetDailyTasks);
+  const displayName = usePreferencesStore((state) => state.displayName);
   const todayMood = useJournalStore((state) => state.entries[today]?.mood);
   const setMood = useJournalStore((state) => state.setMood);
 
@@ -105,6 +109,16 @@ export default function DashboardScreen() {
 
     return () => clearInterval(interval);
   }, [clockNow, completionCooldownUntil]);
+
+  useEffect(() => {
+    if (!completionFeedback) return;
+
+    const timeout = setTimeout(() => {
+      setCompletionFeedback('');
+    }, 2800);
+
+    return () => clearTimeout(timeout);
+  }, [completionFeedback]);
 
   const completedCount = useMemo(() => tasks.filter((item) => item.done).length, [tasks]);
   const totalCount = tasks.length;
@@ -165,6 +179,7 @@ export default function DashboardScreen() {
     }
 
     toggleTask(task.id);
+    setCompletionFeedback(`Done: ${task.title}`);
     const nextCooldownUntil = Date.now() + TASK_COMPLETION_COOLDOWN_MS;
     setCompletionCooldownUntil(nextCooldownUntil);
     setClockNow(Date.now());
@@ -220,15 +235,16 @@ export default function DashboardScreen() {
       >
         <Text style={[styles.screenTitle, { color: theme.subtle }]}>Home</Text>
 
-        <AvatarSection greeting={greeting} name="Christian" />
+        <AvatarSection greeting={greeting} name={displayName || 'Friend'} />
 
         <View style={styles.topCards}>
           <ProgressBar completed={completedCount} total={totalCount} />
+          <WeeklyProgressCard />
           <QuoteCard quote={quote} />
         </View>
 
         <View style={[styles.moodCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.moodTitle, { color: theme.textStrong }]}>How are you feeling?</Text>
+          <Text style={[styles.moodTitle, { color: theme.textStrong }]}>Mood check-in</Text>
           <View style={styles.moodOptions}>
             {MOOD_OPTIONS.map((mood) => {
               const isActive = todayMood === mood.key;
@@ -268,7 +284,7 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.taskHeaderRow}>
-          <Text style={[styles.sectionTitle, { color: theme.textStrong }]}>Today&apos;s Gentle Tasks</Text>
+          <Text style={[styles.sectionTitle, { color: theme.textStrong }]}>Today&apos;s Tasks</Text>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Reset daily tasks"
@@ -287,7 +303,7 @@ export default function DashboardScreen() {
         </View>
 
         <View style={styles.suggestRow}>
-          <Text style={[styles.suggestText, { color: theme.muted }]}>Have something specific in mind?</Text>
+          <Text style={[styles.suggestText, { color: theme.muted }]}>Add your own task</Text>
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel="Add task"
@@ -303,13 +319,27 @@ export default function DashboardScreen() {
           <View style={[styles.cooldownNotice, { backgroundColor: theme.primarySoft, borderColor: theme.primary }]}>
             <Ionicons name="time-outline" size={15} color={theme.primaryStrong} />
             <Text style={[styles.cooldownText, { color: theme.primaryStrong }]}>
-              Take a short pause. Another task can be completed in {completionCooldownRemaining}s.
+              Next completion available in {completionCooldownRemaining}s.
             </Text>
           </View>
         )}
 
+        {Boolean(completionFeedback) && (
+          <View
+            accessibilityLiveRegion="polite"
+            style={[styles.feedbackNotice, { backgroundColor: theme.primarySoft, borderColor: theme.primary }]}
+          >
+            <View style={[styles.feedbackIcon, { backgroundColor: theme.primary }]}>
+              <Ionicons name="checkmark" size={13} color="#FFFFFF" />
+            </View>
+            <Text style={[styles.feedbackText, { color: theme.primaryStrong }]}>{completionFeedback}</Text>
+          </View>
+        )}
+
         {!hasHydrated ? (
-          <Text style={[styles.loadingText, { color: theme.muted }]}>Loading your tasks...</Text>
+          <View style={[styles.loadingCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Text style={[styles.loadingText, { color: theme.muted }]}>Loading tasks...</Text>
+          </View>
         ) : (
           <TaskList
             tasks={tasks}
@@ -329,7 +359,7 @@ export default function DashboardScreen() {
         <Pressable style={styles.modalOverlay} onPress={() => setIsTaskModalOpen(false)}>
           <Pressable style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => undefined}>
             <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>Add a gentle task</Text>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Add task</Text>
               <TouchableOpacity
                 accessibilityRole="button"
                 accessibilityLabel="Close add task modal"
@@ -550,7 +580,13 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 13,
-    marginTop: 8,
+    fontWeight: '700',
+  },
+  loadingCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginTop: 4,
   },
   suggestRow: {
     marginTop: 10,
@@ -597,6 +633,29 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     fontWeight: '700',
+    lineHeight: 17,
+  },
+  feedbackNotice: {
+    marginBottom: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  feedbackIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedbackText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '800',
     lineHeight: 17,
   },
   modalOverlay: {
