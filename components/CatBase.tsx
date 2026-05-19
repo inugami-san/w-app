@@ -475,8 +475,20 @@ export const CatBase: React.FC<WenwenProps> = ({
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'transparent' },
-  canvas: { flex: 1, backgroundColor: 'transparent' },
+  container: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    minWidth: 1,
+    minHeight: 1,
+    backgroundColor: 'transparent',
+  },
+  canvas: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'transparent',
+  },
 });
 
 export default CatBase;

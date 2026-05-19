@@ -20,12 +20,19 @@ type GeminiRequestOptions<T> = {
   onError?: GeminiErrorCallback;
 };
 
+type ExpoConfigExtra = {
+  GEMINI_API_KEY?: string;
+};
+
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error('Gemini request failed.');
 }
 
 function getGeminiApiKey() {
-  const extra = Constants.expoConfig?.extra ?? Constants.manifest?.extra;
+  const extra =
+    (Constants.expoConfig?.extra as ExpoConfigExtra | undefined) ??
+    ((Constants.manifest as { extra?: ExpoConfigExtra } | null)?.extra);
+
   return extra?.GEMINI_API_KEY ?? process.env.EXPO_PUBLIC_GEMINI_API_KEY;
 }
 

@@ -14,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 
 import { APP_THEME } from '@/src/theme/app-theme';
@@ -287,146 +288,151 @@ export default function RootLayout() {
   };
 
   return (
-    <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="login" options={{ headerShown: false, animation: 'fade' }} />
-        <Stack.Screen name="main" options={{ headerShown: false, animation: 'fade' }} />
-        <Stack.Screen name="dashboard" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="journal" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="journal/[dateKey]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="companion" options={{ headerShown: false, animation: 'slide_from_right' }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
-      <Modal
-        transparent
-        animationType="fade"
-        visible={isWellnessReviewVisible}
-        onRequestClose={closeWellnessReview}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.reviewCard, { backgroundColor: appTheme.surface, borderColor: appTheme.border }]}>
-            <View style={styles.reviewHeader}>
-              <View style={styles.reviewHeaderText}>
-                <Text style={[styles.reviewKicker, { color: appTheme.subtle }]}>
-                  {activeWellnessPeriod?.label ?? 'Review'}
-                </Text>
-                <Text style={[styles.reviewTitle, { color: appTheme.text }]}>
-                  {activeWellnessPeriod?.title ?? 'Review'}
-                </Text>
+    <GestureHandlerRootView style={styles.root}>
+      <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
+        <Stack>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="login" options={{ headerShown: false, animation: 'fade' }} />
+          <Stack.Screen name="main" options={{ headerShown: false, animation: 'fade' }} />
+          <Stack.Screen name="dashboard" options={{ headerShown: false, animation: 'slide_from_right' }} />
+          <Stack.Screen name="journal" options={{ headerShown: false, animation: 'slide_from_right' }} />
+          <Stack.Screen name="journal/[dateKey]" options={{ headerShown: false, animation: 'slide_from_right' }} />
+          <Stack.Screen name="settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
+          <Stack.Screen name="companion" options={{ headerShown: false, animation: 'slide_from_right' }} />
+          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+        </Stack>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <Modal
+          transparent
+          animationType="fade"
+          visible={isWellnessReviewVisible}
+          onRequestClose={closeWellnessReview}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.reviewCard, { backgroundColor: appTheme.surface, borderColor: appTheme.border }]}>
+              <View style={styles.reviewHeader}>
+                <View style={styles.reviewHeaderText}>
+                  <Text style={[styles.reviewKicker, { color: appTheme.subtle }]}>
+                    {activeWellnessPeriod?.label ?? 'Review'}
+                  </Text>
+                  <Text style={[styles.reviewTitle, { color: appTheme.text }]}>
+                    {activeWellnessPeriod?.title ?? 'Review'}
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Close review"
+                  onPress={closeWellnessReview}
+                  style={[styles.closeButton, { backgroundColor: appTheme.softSurface }]}
+                >
+                  <Ionicons name="close" size={19} color={appTheme.muted} />
+                </Pressable>
               </View>
-              <Pressable
+
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.reviewScrollContent}>
+                {isWellnessReviewLoading ? (
+                  <View style={styles.loadingBlock}>
+                    <ActivityIndicator color={appTheme.primaryStrong} />
+                    <Text style={[styles.loadingText, { color: appTheme.muted }]}>Writing your review...</Text>
+                  </View>
+                ) : activeWellnessReview ? (
+                  <>
+                    <View style={[styles.summaryBlock, { backgroundColor: appTheme.primarySoft, borderColor: appTheme.softBorder }]}>
+                      <Text style={[styles.summaryTitle, { color: appTheme.textStrong }]}>{activeWellnessReview.title}</Text>
+                      <Text style={[styles.summaryBody, { color: appTheme.muted }]}>{activeWellnessReview.body}</Text>
+                    </View>
+
+                    <View style={styles.statsRow}>
+                      <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
+                        <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>
+                          {activeWellnessReview.completedTaskCount}/{activeWellnessReview.taskCount}
+                        </Text>
+                        <Text style={[styles.statLabel, { color: appTheme.muted }]}>tasks</Text>
+                      </View>
+                      <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
+                        <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>{activeWellnessReview.journalCount}</Text>
+                        <Text style={[styles.statLabel, { color: appTheme.muted }]}>journals</Text>
+                      </View>
+                      <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
+                        <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>{activeWellnessReview.companionMessageCount}</Text>
+                        <Text style={[styles.statLabel, { color: appTheme.muted }]}>chats</Text>
+                      </View>
+                    </View>
+                  </>
+                ) : (
+                  <Text style={[styles.loadingText, { color: appTheme.muted }]}>No review is available yet.</Text>
+                )}
+              </ScrollView>
+
+              <TouchableOpacity
                 accessibilityRole="button"
                 accessibilityLabel="Close review"
                 onPress={closeWellnessReview}
-                style={[styles.closeButton, { backgroundColor: appTheme.softSurface }]}
+                style={[styles.primaryButton, { backgroundColor: appTheme.primary }]}
               >
-                <Ionicons name="close" size={19} color={appTheme.muted} />
-              </Pressable>
+                <Text style={styles.primaryButtonText}>Continue</Text>
+              </TouchableOpacity>
             </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.reviewScrollContent}>
-              {isWellnessReviewLoading ? (
-                <View style={styles.loadingBlock}>
-                  <ActivityIndicator color={appTheme.primaryStrong} />
-                  <Text style={[styles.loadingText, { color: appTheme.muted }]}>Writing your review...</Text>
-                </View>
-              ) : activeWellnessReview ? (
-                <>
-                  <View style={[styles.summaryBlock, { backgroundColor: appTheme.primarySoft, borderColor: appTheme.softBorder }]}>
-                    <Text style={[styles.summaryTitle, { color: appTheme.textStrong }]}>{activeWellnessReview.title}</Text>
-                    <Text style={[styles.summaryBody, { color: appTheme.muted }]}>{activeWellnessReview.body}</Text>
-                  </View>
-
-                  <View style={styles.statsRow}>
-                    <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
-                      <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>
-                        {activeWellnessReview.completedTaskCount}/{activeWellnessReview.taskCount}
-                      </Text>
-                      <Text style={[styles.statLabel, { color: appTheme.muted }]}>tasks</Text>
-                    </View>
-                    <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
-                      <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>{activeWellnessReview.journalCount}</Text>
-                      <Text style={[styles.statLabel, { color: appTheme.muted }]}>journals</Text>
-                    </View>
-                    <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
-                      <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>{activeWellnessReview.companionMessageCount}</Text>
-                      <Text style={[styles.statLabel, { color: appTheme.muted }]}>chats</Text>
-                    </View>
-                  </View>
-                </>
-              ) : (
-                <Text style={[styles.loadingText, { color: appTheme.muted }]}>No review is available yet.</Text>
-              )}
-            </ScrollView>
-
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Close review"
-              onPress={closeWellnessReview}
-              style={[styles.primaryButton, { backgroundColor: appTheme.primary }]}
-            >
-              <Text style={styles.primaryButtonText}>Continue</Text>
-            </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
-      <Modal
-        transparent
-        animationType="fade"
-        visible={isFeelingScaleVisible}
-        onRequestClose={() => closeFeelingScale(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.feelingCard, { backgroundColor: appTheme.surface, borderColor: appTheme.border }]}>
-            <View style={[styles.feelingIcon, { backgroundColor: appTheme.primarySoft }]}>
-              <Ionicons name="heart-outline" size={22} color={appTheme.primaryStrong} />
-            </View>
-            <Text style={[styles.reviewKicker, { color: appTheme.subtle }]}>Daily check-in</Text>
-            <Text style={[styles.feelingTitle, { color: appTheme.text }]}>How are you feeling right now?</Text>
-            <Text style={[styles.feelingBody, { color: appTheme.muted }]}>
-              Choose a number from 1 to 10. 1 means very low, 10 means steady.
-            </Text>
+        </Modal>
+        <Modal
+          transparent
+          animationType="fade"
+          visible={isFeelingScaleVisible}
+          onRequestClose={() => closeFeelingScale(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.feelingCard, { backgroundColor: appTheme.surface, borderColor: appTheme.border }]}>
+              <View style={[styles.feelingIcon, { backgroundColor: appTheme.primarySoft }]}>
+                <Ionicons name="heart-outline" size={22} color={appTheme.primaryStrong} />
+              </View>
+              <Text style={[styles.reviewKicker, { color: appTheme.subtle }]}>Daily check-in</Text>
+              <Text style={[styles.feelingTitle, { color: appTheme.text }]}>How are you feeling right now?</Text>
+              <Text style={[styles.feelingBody, { color: appTheme.muted }]}>
+                Choose a number from 1 to 10. 1 means very low, 10 means steady.
+              </Text>
 
-            <View style={styles.scaleGrid}>
-              {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
-                <Pressable
-                  key={score}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Rate feeling ${score} out of 10`}
-                  onPress={() => closeFeelingScale(score)}
-                  style={({ pressed }) => [
-                    styles.scaleButton,
-                    {
-                      backgroundColor: appTheme.softSurface,
-                      borderColor: appTheme.softBorder,
-                    },
-                    pressed && styles.scaleButtonPressed,
-                  ]}
-                >
-                  <Text style={[styles.scaleButtonText, { color: appTheme.textStrong }]}>{score}</Text>
-                </Pressable>
-              ))}
-            </View>
+              <View style={styles.scaleGrid}>
+                {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
+                  <Pressable
+                    key={score}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Rate feeling ${score} out of 10`}
+                    onPress={() => closeFeelingScale(score)}
+                    style={({ pressed }) => [
+                      styles.scaleButton,
+                      {
+                        backgroundColor: appTheme.softSurface,
+                        borderColor: appTheme.softBorder,
+                      },
+                      pressed && styles.scaleButtonPressed,
+                    ]}
+                  >
+                    <Text style={[styles.scaleButtonText, { color: appTheme.textStrong }]}>{score}</Text>
+                  </Pressable>
+                ))}
+              </View>
 
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Skip feeling check-in today"
-              onPress={() => closeFeelingScale(null)}
-              style={[styles.skipFeelingButton, { backgroundColor: appTheme.softSurface }]}
-            >
-              <Text style={[styles.skipFeelingText, { color: appTheme.muted }]}>Not now</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Skip feeling check-in today"
+                onPress={() => closeFeelingScale(null)}
+                style={[styles.skipFeelingButton, { backgroundColor: appTheme.softSurface }]}
+              >
+                <Text style={[styles.skipFeelingText, { color: appTheme.muted }]}>Not now</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
-    </ThemeProvider>
+        </Modal>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(24, 36, 58, 0.32)',
