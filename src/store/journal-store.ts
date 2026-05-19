@@ -6,6 +6,7 @@ import type {
   EvaluationFrequency,
   JournalDailyContext,
   JournalEntry,
+  JournalImageAttachment,
   JournalSummary,
   JournalTaskSnapshot,
   MoodKey,
@@ -19,6 +20,7 @@ type JournalStore = {
   hasHydrated: boolean;
   setFeelingNote: (dateKey: string, note: string) => void;
   setFeelingScale: (dateKey: string, score: number | null) => void;
+  setImageAttachment: (dateKey: string, image?: JournalImageAttachment) => void;
   setDailyContext: (dateKey: string, context: JournalDailyContext) => void;
   setMood: (dateKey: string, mood: MoodKey) => void;
   setTaskSnapshot: (dateKey: string, tasks: JournalTaskSnapshot[]) => void;
@@ -30,6 +32,7 @@ type JournalStore = {
     feelingNote: string;
     dailyContext?: JournalDailyContext;
     feelingScore?: number | null;
+    image?: JournalImageAttachment;
     mood?: MoodKey;
   }) => JournalSummary;
   setEvaluationFrequency: (frequency: EvaluationFrequency) => void;
@@ -101,6 +104,23 @@ export const useJournalStore = create<JournalStore>()(
         });
       },
 
+      setImageAttachment: (dateKey, image) => {
+        const nowIso = new Date().toISOString();
+        set((state) => {
+          const entry = ensureEntry(state.entries, dateKey);
+          return {
+            entries: {
+              ...state.entries,
+              [dateKey]: {
+                ...entry,
+                image,
+                updatedAt: nowIso,
+              },
+            },
+          };
+        });
+      },
+
       setDailyContext: (dateKey, context) => {
         const nowIso = new Date().toISOString();
         set((state) => {
@@ -152,7 +172,7 @@ export const useJournalStore = create<JournalStore>()(
         });
       },
 
-      addSummary: ({ dateKey, title, body, tasks, feelingNote, dailyContext, feelingScore, mood }) => {
+      addSummary: ({ dateKey, title, body, tasks, feelingNote, dailyContext, feelingScore, image, mood }) => {
         const nowIso = new Date().toISOString();
         const summary: JournalSummary = {
           id: createSummaryId(),
@@ -163,6 +183,7 @@ export const useJournalStore = create<JournalStore>()(
           feelingNote,
           dailyContext,
           feelingScore,
+          image,
           mood,
           createdAt: nowIso,
         };
@@ -176,6 +197,7 @@ export const useJournalStore = create<JournalStore>()(
                 ...entry,
                 feelingNote,
                 dailyContext: dailyContext ?? entry.dailyContext,
+                image,
                 feelingScale:
                   feelingScore === undefined
                     ? entry.feelingScale

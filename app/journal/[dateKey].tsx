@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,6 +17,7 @@ import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/hom
 import { getMoodLabel } from '@/src/features/journal/moods';
 import { generateJournalSummary } from '@/src/services/gemini-journal-summary';
 import { scheduleJournalSummaryNotification } from '@/src/services/journal-notifications';
+import { getJournalImageForGemini } from '@/src/services/journal-image';
 import { useJournalStore } from '@/src/store/journal-store';
 import { useAppTheme } from '@/src/theme/app-theme';
 import type { JournalDailyContext, JournalSummary, JournalTaskSnapshot } from '@/src/types/journal';
@@ -72,6 +74,7 @@ export default function JournalDateScreen() {
     entry?.summaries.find((summary) => summary.id === initialSummaryId) ?? entry?.summaries[0] ?? null
   );
   const moodLabel = getMoodLabel(entry?.mood);
+  const journalImage = entry?.image;
   const dailyContextLabels = getDailyContextLabels(entry?.dailyContext);
   const feelingScoreLabel = getFeelingScoreLabel(entry?.feelingScale?.score);
 
@@ -115,12 +118,15 @@ export default function JournalDateScreen() {
 
     setIsSummarizing(true);
     try {
+      const geminiImage = await getJournalImageForGemini(journalImage);
       const result = await generateJournalSummary({
         dateKey,
         tasks: taskSnapshot,
         feelingNote: note.trim(),
         dailyContext: entry?.dailyContext,
         feelingScore: entry?.feelingScale?.score,
+        image: geminiImage,
+        hasImage: Boolean(journalImage),
         mood: entry?.mood,
       });
       const summary = addSummary({
@@ -131,6 +137,7 @@ export default function JournalDateScreen() {
         feelingNote: note.trim(),
         dailyContext: entry?.dailyContext,
         feelingScore: entry?.feelingScale?.score,
+        image: journalImage,
         mood: entry?.mood,
       });
       setActiveSummary(summary);
@@ -162,6 +169,7 @@ export default function JournalDateScreen() {
           {taskSnapshot.length > 0 ? `${completedCount}/${taskSnapshot.length} tasks finished` : 'Journal note'}
           {feelingScoreLabel ? ` · ${feelingScoreLabel}` : ''}
           {moodLabel ? ` · ${moodLabel}` : ''}
+          {journalImage ? ' · Photo added' : ''}
           {dailyContextLabels.length > 0 ? ' · Context added' : ''}
         </Text>
 
@@ -226,6 +234,7 @@ export default function JournalDateScreen() {
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
           <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Daily note</Text>
+          {journalImage && <Image source={{ uri: journalImage.uri }} style={styles.journalImage} />}
           <TextInput
             value={note}
             onChangeText={setNote}
@@ -252,6 +261,7 @@ export default function JournalDateScreen() {
                 isSummarizing ||
                 (taskSnapshot.length === 0 &&
                   note.trim().length === 0 &&
+                  !journalImage &&
                   dailyContextLabels.length === 0 &&
                   !feelingScoreLabel)
               }
@@ -411,6 +421,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlignVertical: 'top',
     marginTop: 12,
+  },
+  journalImage: {
+    width: '100%',
+    height: 210,
+    borderRadius: 16,
+    marginTop: 12,
+    backgroundColor: '#E8EEF0',
   },
   actionRow: {
     flexDirection: 'row',

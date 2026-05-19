@@ -6,8 +6,14 @@ const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models
 
 export type GeminiErrorCallback = (error: Error) => void;
 
+export type GeminiInlineImage = {
+  mimeType: string;
+  data: string;
+};
+
 type GeminiRequestOptions<T> = {
   prompt: string;
+  images?: GeminiInlineImage[];
   fallback: T;
   parse: (text: string) => T;
   generationConfig?: Record<string, unknown>;
@@ -25,6 +31,7 @@ function getGeminiApiKey() {
 
 export async function requestGeminiWithFallback<T>({
   prompt,
+  images = [],
   fallback,
   parse,
   generationConfig,
@@ -50,7 +57,15 @@ export async function requestGeminiWithFallback<T>({
         contents: [
           {
             role: 'user',
-            parts: [{ text: prompt }],
+            parts: [
+              { text: prompt },
+              ...images.map((image) => ({
+                inline_data: {
+                  mime_type: image.mimeType,
+                  data: image.data,
+                },
+              })),
+            ],
           },
         ],
         generationConfig,

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -12,17 +13,25 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
 import { getMoodLabel } from '@/src/features/journal/moods';
 import { generateJournalSummary } from '@/src/services/gemini-journal-summary';
 import { scheduleJournalSummaryNotification } from '@/src/services/journal-notifications';
+import { getJournalImageForGemini } from '@/src/services/journal-image';
 import { useJournalStore } from '@/src/store/journal-store';
 import { usePreferencesStore } from '@/src/store/preferences-store';
 import { useTaskStore } from '@/src/store/task-store';
 import { useAppTheme } from '@/src/theme/app-theme';
-import type { JournalDailyContext, JournalEntry, JournalSummary, JournalTaskSnapshot } from '@/src/types/journal';
+import type {
+  JournalDailyContext,
+  JournalEntry,
+  JournalImageAttachment,
+  JournalSummary,
+  JournalTaskSnapshot,
+} from '@/src/types/journal';
 import { getLocalDateKey } from '@/src/utils/date';
 
 function formatDateLabel(dateKey: string) {
@@ -75,6 +84,10 @@ function getFeelingScoreLabel(score: number | null | undefined) {
   return typeof score === 'number' ? `Feeling ${score}/10` : '';
 }
 
+function getJournalImageKey(image: JournalImageAttachment | undefined) {
+  return image?.uri ?? '';
+}
+
 function hasHistoryContent(entry: JournalEntry | undefined, dateKey: string, today: string) {
   if (!entry) return false;
   if (dateKey === today) return false;
@@ -98,6 +111,7 @@ export default function JournalScreen() {
   const yesterday = useMemo(() => getPreviousDateKey(today), [today]);
   const entries = useJournalStore((state) => state.entries);
   const setFeelingNote = useJournalStore((state) => state.setFeelingNote);
+  const setImageAttachment = useJournalStore((state) => state.setImageAttachment);
   const setEntryDailyContext = useJournalStore((state) => state.setDailyContext);
   const setTaskSnapshot = useJournalStore((state) => state.setTaskSnapshot);
   const addSummary = useJournalStore((state) => state.addSummary);
@@ -107,6 +121,8 @@ export default function JournalScreen() {
   const theme = useAppTheme();
   const [isJournalModalVisible, setIsJournalModalVisible] = useState(false);
   const [journalNote, setJournalNote] = useState('');
+  const [journalImage, setJournalImage] = useState<JournalImageAttachment | null>(null);
+  const [journalImageBase64, setJournalImageBase64] = useState('');
   const [isSavingJournal, setIsSavingJournal] = useState(false);
   const [reviewDateKey, setReviewDateKey] = useState('');
   const [isReviewModalVisible, setIsReviewModalVisible] = useState(false);
@@ -125,6 +141,7 @@ export default function JournalScreen() {
   const reviewTasks = getVisibleTasks(reviewEntry, reviewDateKey, today);
   const reviewFeelingNote = reviewEntry?.feelingNote.trim() ?? '';
   const reviewMoodLabel = getMoodLabel(reviewEntry?.mood);
+  const reviewImage = reviewEntry?.image;
   const reviewDailyContextLabels = getDailyContextLabels(reviewEntry?.dailyContext);
   const reviewFeelingScoreLabel = getFeelingScoreLabel(reviewEntry?.feelingScale?.score);
 
@@ -174,7 +191,48 @@ export default function JournalScreen() {
 
   const openJournalComposer = () => {
     setJournalNote(entries[today]?.feelingNote ?? '');
+    setJournalImage(entries[today]?.image ?? null);
+    setJournalImageBase64('');
     setIsJournalModalVisible(true);
+  };
+
+  const handlePickJournalImage = async () => {
+    if (isSavingJournal) return;
+
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync(false);
+      if (!permission.granted) {
+        Alert.alert('Photo access needed', 'Allow photo access to attach an image to your journal.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: 'images',
+        allowsEditing: true,
+        quality: 0.72,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      setJournalImage({
+        uri: asset.uri,
+        mimeType: asset.mimeType || 'image/jpeg',
+        width: asset.width || undefined,
+        height: asset.height || undefined,
+        fileName: asset.fileName ?? null,
+      });
+      setJournalImageBase64(asset.base64 ?? '');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to attach this image.';
+      Alert.alert('Image not attached', message);
+    }
+  };
+
+  const handleRemoveJournalImage = () => {
+    setJournalImage(null);
+    setJournalImageBase64('');
   };
 
   const openReviewForDate = useCallback(
@@ -197,6 +255,7 @@ export default function JournalScreen() {
             summary.tasks.length === tasks.length &&
             summary.feelingNote.trim() === feelingNote &&
             summary.feelingScore === feelingScore &&
+            getJournalImageKey(summary.image) === getJournalImageKey(entry?.image) &&
             getDailyContextKey(summary.dailyContext) === getDailyContextKey(entryDailyContext)
         ) ??
         null;
@@ -208,12 +267,15 @@ export default function JournalScreen() {
       setReviewSummary(null);
       setIsReviewLoading(true);
       try {
+        const geminiImage = await getJournalImageForGemini(entry?.image);
         const result = await generateJournalSummary({
           dateKey,
           tasks,
           feelingNote,
           dailyContext: entryDailyContext,
           feelingScore,
+          image: geminiImage,
+          hasImage: Boolean(entry?.image),
           mood: entry?.mood,
         });
         const summary = addSummary({
@@ -224,6 +286,7 @@ export default function JournalScreen() {
           feelingNote,
           dailyContext: entryDailyContext,
           feelingScore,
+          image: entry?.image,
           mood: entry?.mood,
         });
         setReviewSummary(summary);
@@ -240,23 +303,27 @@ export default function JournalScreen() {
 
   const handleSaveJournal = async () => {
     const cleanNote = journalNote.trim();
-    if (!cleanNote) {
-      Alert.alert('Write something first', 'Add a journal note before saving.');
+    if (!cleanNote && !journalImage) {
+      Alert.alert('Add something first', 'Write a note or attach a photo before saving.');
       return;
     }
 
     setIsSavingJournal(true);
     setFeelingNote(today, cleanNote);
+    setImageAttachment(today, journalImage ?? undefined);
     setEntryDailyContext(today, {});
     setTaskSnapshot(today, []);
 
     try {
+      const geminiImage = await getJournalImageForGemini(journalImage, journalImageBase64);
       const result = await generateJournalSummary({
         dateKey: today,
         tasks: [],
         feelingNote: cleanNote,
         dailyContext: {},
         feelingScore: entries[today]?.feelingScale?.score,
+        image: geminiImage,
+        hasImage: Boolean(journalImage),
         mood: entries[today]?.mood,
       });
       const summary = addSummary({
@@ -267,6 +334,7 @@ export default function JournalScreen() {
         feelingNote: cleanNote,
         dailyContext: {},
         feelingScore: entries[today]?.feelingScale?.score,
+        image: journalImage ?? undefined,
         mood: entries[today]?.mood,
       });
       setReviewDateKey(today);
@@ -343,6 +411,7 @@ export default function JournalScreen() {
               const summary = entry?.summaries[0];
               const hasTasks = sourceTasks.length > 0;
               const hasContext = hasDailyContext(entry?.dailyContext);
+              const hasImage = Boolean(entry?.image);
 
               return (
                 <Pressable
@@ -369,6 +438,7 @@ export default function JournalScreen() {
                       {feelingScoreLabel ? ` · ${feelingScoreLabel}` : ''}
                       {moodLabel ? ` · ${moodLabel}` : ''}
                       {noteText ? ' · Note added' : ''}
+                      {hasImage ? ' · Photo added' : ''}
                       {hasContext ? ' · Context added' : ''}
                     </Text>
                     {summary && (
@@ -413,6 +483,49 @@ export default function JournalScreen() {
               <Text style={[styles.modalBody, { color: theme.muted }]}>
                 Write freely. No format required.
               </Text>
+
+              <View style={[styles.imageAttachCard, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}>
+                {journalImage ? (
+                  <View style={styles.imagePreviewRow}>
+                    <Image source={{ uri: journalImage.uri }} style={styles.imagePreview} />
+                    <View style={styles.imagePreviewTextWrap}>
+                      <Text style={[styles.imagePreviewTitle, { color: theme.textStrong }]}>Photo attached</Text>
+                      <Text style={[styles.imagePreviewBody, { color: theme.muted }]}>
+                        This can help Wenwen summarize the memory if the image data is available.
+                      </Text>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel="Remove attached journal photo"
+                        onPress={handleRemoveJournalImage}
+                        disabled={isSavingJournal}
+                        style={styles.removeImageButton}
+                      >
+                        <Ionicons name="trash-outline" size={14} color="#C33B3B" />
+                        <Text style={styles.removeImageText}>Remove photo</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    accessibilityRole="button"
+                    accessibilityLabel="Attach a photo to this journal"
+                    onPress={handlePickJournalImage}
+                    disabled={isSavingJournal}
+                    style={styles.attachImageButton}
+                  >
+                    <View style={[styles.attachImageIcon, { backgroundColor: theme.primarySoft }]}>
+                      <Ionicons name="image-outline" size={18} color={theme.primaryStrong} />
+                    </View>
+                    <View style={styles.imagePreviewTextWrap}>
+                      <Text style={[styles.imagePreviewTitle, { color: theme.textStrong }]}>Attach photo</Text>
+                      <Text style={[styles.imagePreviewBody, { color: theme.muted }]}>
+                        Optional memory cue for this journal.
+                      </Text>
+                    </View>
+                    <Ionicons name="add" size={18} color={theme.primaryStrong} />
+                  </TouchableOpacity>
+                )}
+              </View>
 
               <TextInput
                 value={journalNote}
@@ -521,6 +634,7 @@ export default function JournalScreen() {
 
               <View style={[styles.reviewSection, { borderColor: theme.softBorder }]}>
                 <Text style={[styles.reviewSectionTitle, { color: theme.textStrong }]}>Daily note</Text>
+                {reviewImage && <Image source={{ uri: reviewImage.uri }} style={styles.reviewImage} />}
                 <Text style={[styles.reviewMutedText, { color: theme.muted }]}>
                   {reviewFeelingNote || 'No note was written for this day.'}
                 </Text>
@@ -745,6 +859,67 @@ const styles = StyleSheet.create({
   composerScrollContent: {
     paddingBottom: 2,
   },
+  imageAttachCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  attachImageButton: {
+    minHeight: 74,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  attachImageIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imagePreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+  },
+  imagePreview: {
+    width: 82,
+    height: 82,
+    borderRadius: 16,
+    backgroundColor: '#E8EEF0',
+  },
+  imagePreviewTextWrap: {
+    flex: 1,
+  },
+  imagePreviewTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  imagePreviewBody: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  removeImageButton: {
+    marginTop: 9,
+    alignSelf: 'flex-start',
+    minHeight: 32,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFF0F0',
+  },
+  removeImageText: {
+    color: '#C33B3B',
+    fontSize: 11,
+    fontWeight: '900',
+  },
   promptSection: {
     marginTop: 14,
     gap: 8,
@@ -875,6 +1050,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     fontWeight: '600',
+  },
+  reviewImage: {
+    width: '100%',
+    height: 190,
+    borderRadius: 16,
+    marginBottom: 10,
+    backgroundColor: '#E8EEF0',
   },
   moodLine: {
     fontSize: 13,

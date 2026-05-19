@@ -9,6 +9,7 @@ export default {
   newArchEnabled: true,
   ios: {
     supportsTablet: true,
+    bundleIdentifier: "com.christianjariol.wapp"
   },
   android: {
     adaptiveIcon: {
@@ -26,6 +27,9 @@ export default {
   },
   extra: {
     GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY,
+     eas: {
+        projectId: "da47e4d2-6af8-4751-a972-60656bde75eb"
+     }
   },
   plugins: [
     'expo-router',
@@ -36,6 +40,12 @@ export default {
         imageWidth: 280,
         resizeMode: 'contain',
         backgroundColor: '#F7FAF8',
+      },
+    ],
+    [
+      'expo-image-picker',
+      {
+        photosPermission: 'Wenwen lets you attach a photo to your journal when you choose one.',
       },
     ],
     'expo-sqlite',

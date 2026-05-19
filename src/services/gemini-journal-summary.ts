@@ -1,11 +1,26 @@
 import { getMoodLabel } from '@/src/features/journal/moods';
-import { type GeminiErrorCallback, requestGeminiWithFallback } from '@/src/services/gemini-client';
+import {
+  type GeminiErrorCallback,
+  type GeminiInlineImage,
+  requestGeminiWithFallback,
+} from '@/src/services/gemini-client';
 import { buildWenwenPrompt } from '@/src/services/wenwen-persona';
 import type { JournalDailyContext, JournalTaskSnapshot, MoodKey } from '@/src/types/journal';
 
 type JournalSummaryResult = {
   title: string;
   body: string;
+};
+
+type JournalSummaryInput = {
+  dateKey: string;
+  tasks: JournalTaskSnapshot[];
+  feelingNote: string;
+  dailyContext?: JournalDailyContext;
+  feelingScore?: number | null;
+  image?: GeminiInlineImage;
+  hasImage?: boolean;
+  mood?: MoodKey;
 };
 
 function extractJsonObject(text: string): string {
@@ -67,6 +82,7 @@ function createFallbackJournalSummary(input: {
   feelingNote: string;
   dailyContext?: JournalDailyContext;
   feelingScore?: number | null;
+  hasImage?: boolean;
   mood?: MoodKey;
 }): JournalSummaryResult {
   const completed = input.tasks.filter((task) => task.done);
@@ -91,6 +107,7 @@ function createFallbackJournalSummary(input: {
     typeof input.feelingScore === 'number' ? `Feeling rating: ${input.feelingScore}/10.` : '',
     contextText ? `Daily context: ${contextText}.` : '',
     note ? `Your note: "${trimText(note)}".` : '',
+    input.hasImage ? 'A photo was attached to help remember the day.' : '',
     'For the next step, keep it small and realistic.',
   ];
 
@@ -101,14 +118,7 @@ function createFallbackJournalSummary(input: {
 }
 
 export async function generateJournalSummary(
-  input: {
-    dateKey: string;
-    tasks: JournalTaskSnapshot[];
-    feelingNote: string;
-    dailyContext?: JournalDailyContext;
-    feelingScore?: number | null;
-    mood?: MoodKey;
-  },
+  input: JournalSummaryInput,
   options?: { onError?: GeminiErrorCallback }
 ): Promise<JournalSummaryResult> {
   const completed = input.tasks.filter((task) => task.done);
@@ -120,6 +130,9 @@ export async function generateJournalSummary(
     '- Mention completed and unfinished tasks neutrally.',
     '- If there are no finished tasks, focus on what was recorded and one realistic next step.',
     '- Mention the user note, feeling rating, mood, or daily context only when useful.',
+    '- If an image is attached, use it only as a memory cue.',
+    '- Describe only visible, non-sensitive image details.',
+    '- Do not identify people, infer private traits, diagnose health, infer exact location, or assume relationships from the image.',
     '- If daily context suggests a useful pattern, say it carefully without diagnosing.',
     '- Keep the body to one short paragraph with 3-5 sentences.',
     '- Use a clear title, not a sentimental title.',
@@ -131,6 +144,7 @@ export async function generateJournalSummary(
     `Mood check-in: ${getMoodLabel(input.mood) ?? 'Not selected'}`,
     `Feeling rating: ${typeof input.feelingScore === 'number' ? `${input.feelingScore}/10` : 'Not selected'}`,
     `Daily context: ${contextText || 'Not recorded'}`,
+    `Image attached: ${input.hasImage || input.image ? 'Yes' : 'No'}`,
     `User note: ${input.feelingNote || 'No note written'}`,
     '',
     'JSON Format:',
@@ -139,6 +153,7 @@ export async function generateJournalSummary(
 
   return requestGeminiWithFallback({
     prompt,
+    images: input.image ? [input.image] : [],
     fallback: createFallbackJournalSummary(input),
     onError: options?.onError,
     generationConfig: {

@@ -20,6 +20,14 @@ export type JournalFeelingScale = {
   checkedAt: string;
 };
 
+export type JournalImageAttachment = {
+  uri: string;
+  mimeType: string;
+  width?: number;
+  height?: number;
+  fileName?: string | null;
+};
+
 export type JournalTaskSnapshot = Pick<TaskItem, 'id' | 'title' | 'detail' | 'done' | 'isRoutine'>;
 
 export type JournalSummary = {
@@ -32,6 +40,7 @@ export type JournalSummary = {
   feelingNote: string;
   dailyContext?: JournalDailyContext;
   feelingScore?: number | null;
+  image?: JournalImageAttachment;
   mood?: MoodKey;
 };
 
@@ -40,6 +49,7 @@ export type JournalEntry = {
   feelingNote: string;
   dailyContext?: JournalDailyContext;
   feelingScale?: JournalFeelingScale;
+  image?: JournalImageAttachment;
   mood?: MoodKey;
   updatedAt: string;
   tasks: JournalTaskSnapshot[];
