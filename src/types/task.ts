@@ -4,6 +4,7 @@ export type TaskItem = {
   detail: string;
   due: string;
   done: boolean;
+  isRoutine?: boolean;
   createdAt: string;
   updatedAt: string;
 };

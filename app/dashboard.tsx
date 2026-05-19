@@ -15,30 +15,35 @@ import { Ionicons } from '@expo/vector-icons';
 
 import type { WenwenProps } from '@/components/WenwenBase';
 import type { TaskItem } from '@/src/types/task';
-import { AvatarSection } from '@/src/components/home/AvatarSection';
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
 import { ProgressBar } from '@/src/components/home/ProgressBar';
 import { QuoteCard } from '@/src/components/home/QuoteCard';
 import { TaskComposer } from '@/src/components/home/TaskComposer';
 import { TaskList } from '@/src/components/home/TaskList';
 import { WeeklyProgressCard } from '@/src/components/home/WeeklyProgressCard';
-import { MOOD_OPTIONS } from '@/src/features/journal/moods';
 import { generateGeminiTaskSuggestions } from '@/src/services/gemini-task-suggestions';
-import { useJournalStore } from '@/src/store/journal-store';
-import { usePreferencesStore } from '@/src/store/preferences-store';
+import {
+  DEFAULT_AVATAR_COLORS,
+  DEFAULT_AVATAR_PERSONA,
+  type AvatarPersona,
+  usePreferencesStore,
+} from '@/src/store/preferences-store';
 import { useTaskStore } from '@/src/store/task-store';
 import { WELLNESS_CATEGORIES, type SuggestedTask, type WellnessCategory } from '@/src/types/ai-task';
-import type { MoodKey } from '@/src/types/journal';
 import { useAppTheme } from '@/src/theme/app-theme';
-import { getLocalDateKey } from '@/src/utils/date';
 import { getTimeGreeting } from '@/src/utils/greeting';
 import { getDailyQuote } from '@/src/utils/quotes';
 
-const TASK_COMPLETION_COOLDOWN_MS = 30_000;
+const TASK_COMPLETION_COOLDOWN_MS = 10_000;
 
 function getParam(value: string | string[] | undefined, fallback: string): string {
   if (Array.isArray(value)) return value[0] ?? fallback;
   return value ?? fallback;
+}
+
+function getPersonaParam(value: string | string[] | undefined, fallback: AvatarPersona): AvatarPersona {
+  const raw = getParam(value, fallback);
+  return raw === 'cat' ? 'cat' : 'bot';
 }
 
 export default function DashboardScreen() {
@@ -47,33 +52,69 @@ export default function DashboardScreen() {
     eyeColor?: string | string[];
     faceColor?: string | string[];
     bodyColor?: string | string[];
+    persona?: string | string[];
   }>();
 
-  const [WenwenComponent, setWenwenComponent] = useState<ComponentType<WenwenProps> | null>(null);
+  const [avatarComponents, setAvatarComponents] =
+    useState<Record<AvatarPersona, ComponentType<WenwenProps>> | null>(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [taskPendingDelete, setTaskPendingDelete] = useState<TaskItem | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<WellnessCategory>(WELLNESS_CATEGORIES[0]);
   const [isGeneratingSuggestion, setIsGeneratingSuggestion] = useState(false);
   const [suggestedTasks, setSuggestedTasks] = useState<SuggestedTask[]>([]);
   const [isSuggestionReviewOpen, setIsSuggestionReviewOpen] = useState(false);
-  const [completionCooldownUntil, setCompletionCooldownUntil] = useState(0);
+  const [isStarterTasksPromptOpen, setIsStarterTasksPromptOpen] = useState(false);
   const [completionFeedback, setCompletionFeedback] = useState('');
   const [clockNow, setClockNow] = useState(() => Date.now());
-  const eyeColor = getParam(params.eyeColor, '#00D4C2');
-  const faceColor = getParam(params.faceColor, '#E2E8F0');
-  const bodyColor = getParam(params.bodyColor, '#F0F2F5');
-  const today = useMemo(() => getLocalDateKey(), []);
+  const avatarColors = usePreferencesStore((state) => state.avatarColors);
+  const avatarPersona = usePreferencesStore((state) => state.avatarPersona);
+  const setAvatarColors = usePreferencesStore((state) => state.setAvatarColors);
+  const setAvatarPersona = usePreferencesStore((state) => state.setAvatarPersona);
+  const paramEyeColor = getParam(params.eyeColor, '');
+  const paramFaceColor = getParam(params.faceColor, '');
+  const paramBodyColor = getParam(params.bodyColor, '');
+  const hasParamPersona = Boolean(getParam(params.persona, ''));
+  const selectedPersona = hasParamPersona
+    ? getPersonaParam(params.persona, DEFAULT_AVATAR_PERSONA)
+    : avatarPersona ?? DEFAULT_AVATAR_PERSONA;
+  const eyeColor = paramEyeColor || avatarColors?.eyeColor || DEFAULT_AVATAR_COLORS.eyeColor;
+  const faceColor = paramFaceColor || avatarColors?.faceColor || DEFAULT_AVATAR_COLORS.faceColor;
+  const bodyColor = paramBodyColor || avatarColors?.bodyColor || DEFAULT_AVATAR_COLORS.bodyColor;
+  const AvatarComponent = avatarComponents?.[selectedPersona] ?? null;
 
   const tasks = useTaskStore((state) => state.tasks);
   const hasHydrated = useTaskStore((state) => state.hasHydrated);
   const initializeTasks = useTaskStore((state) => state.initializeTasks);
+  const hasDecidedStarterTasks = useTaskStore((state) => state.hasDecidedStarterTasks);
+  const acceptStarterTasks = useTaskStore((state) => state.acceptStarterTasks);
+  const declineStarterTasks = useTaskStore((state) => state.declineStarterTasks);
   const addTask = useTaskStore((state) => state.addTask);
   const toggleTask = useTaskStore((state) => state.toggleTask);
   const deleteTask = useTaskStore((state) => state.deleteTask);
+  const completionCooldownUntil = useTaskStore((state) => state.completionCooldownUntil);
+  const startCompletionCooldown = useTaskStore((state) => state.startCompletionCooldown);
   const resetDailyTasks = useTaskStore((state) => state.resetDailyTasks);
   const displayName = usePreferencesStore((state) => state.displayName);
-  const todayMood = useJournalStore((state) => state.entries[today]?.mood);
-  const setMood = useJournalStore((state) => state.setMood);
+  const homeGuide = usePreferencesStore((state) => state.homeGuide);
+  const dismissHomeGuide = usePreferencesStore((state) => state.dismissHomeGuide);
+
+  useEffect(() => {
+    if (!paramEyeColor && !paramFaceColor && !paramBodyColor && !hasParamPersona) return;
+
+    setAvatarColors({ eyeColor, faceColor, bodyColor });
+    setAvatarPersona(selectedPersona);
+  }, [
+    bodyColor,
+    eyeColor,
+    faceColor,
+    hasParamPersona,
+    paramBodyColor,
+    paramEyeColor,
+    paramFaceColor,
+    selectedPersona,
+    setAvatarColors,
+    setAvatarPersona,
+  ]);
 
   useEffect(() => {
     const load = async () => {
@@ -85,12 +126,18 @@ export default function DashboardScreen() {
         });
       }
 
-      const mod = await import('@/components/WenwenBase');
-      setWenwenComponent(() => mod.WenwenBase as ComponentType<WenwenProps>);
+      const [botMod, catMod] = await Promise.all([
+        import('@/components/WenwenBase'),
+        import('@/components/CatBase'),
+      ]);
+      setAvatarComponents({
+        bot: botMod.WenwenBase as ComponentType<WenwenProps>,
+        cat: catMod.CatBase as ComponentType<WenwenProps>,
+      });
     };
 
     load().catch(() => {
-      setWenwenComponent(null);
+      setAvatarComponents(null);
     });
   }, []);
 
@@ -101,14 +148,22 @@ export default function DashboardScreen() {
   }, [hasHydrated, initializeTasks, resetDailyTasks]);
 
   useEffect(() => {
+    if (!hasHydrated) return;
+    const shouldPrompt = tasks.length === 0 && !hasDecidedStarterTasks;
+    setIsStarterTasksPromptOpen(shouldPrompt);
+  }, [hasHydrated, tasks.length, hasDecidedStarterTasks]);
+
+  useEffect(() => {
     if (completionCooldownUntil <= Date.now()) return;
+
+    setClockNow(Date.now());
 
     const interval = setInterval(() => {
       setClockNow(Date.now());
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [clockNow, completionCooldownUntil]);
+  }, [completionCooldownUntil]);
 
   useEffect(() => {
     if (!completionFeedback) return;
@@ -129,14 +184,32 @@ export default function DashboardScreen() {
 
   const greeting = useMemo(() => getTimeGreeting(), []);
   const quote = useMemo(() => getDailyQuote(), []);
+  const progressLabel =
+    totalCount === 0
+      ? 'Start with one small task.'
+      : completedCount === totalCount
+        ? 'All set for today.'
+        : `${Math.max(totalCount - completedCount, 0)} task${totalCount - completedCount === 1 ? '' : 's'} left today.`;
+  const shouldShowHomeGuide =
+    !homeGuide.dismissed && (!homeGuide.visitedJournal || !homeGuide.visitedCompanion);
 
-  const handleCreateTask = (title: string, detail: string) => {
+  const handleCreateTask = (title: string, detail: string, isRoutine: boolean) => {
     addTask({
       title,
       detail,
       due: 'Today',
+      isRoutine,
     });
     setIsTaskModalOpen(false);
+  };
+
+  const handleOpenGuideAction = (target: 'tasks' | 'journal' | 'companion') => {
+    if (target === 'tasks') {
+      setIsTaskModalOpen(true);
+      return;
+    }
+
+    router.push(target === 'journal' ? '/journal' : '/companion');
   };
 
   const handleTabPress = (tab: DashboardTabKey) => {
@@ -164,24 +237,19 @@ export default function DashboardScreen() {
     setTaskPendingDelete(task);
   };
 
-  const handleSelectMood = (mood: MoodKey) => {
-    setMood(today, mood);
-  };
-
   const handleToggleTask = (task: TaskItem) => {
+    if (completionCooldownRemaining > 0) {
+      return;
+    }
+
     if (task.done) {
       toggleTask(task.id);
       return;
     }
 
-    if (completionCooldownRemaining > 0) {
-      return;
-    }
-
     toggleTask(task.id);
     setCompletionFeedback(`Done: ${task.title}`);
-    const nextCooldownUntil = Date.now() + TASK_COMPLETION_COOLDOWN_MS;
-    setCompletionCooldownUntil(nextCooldownUntil);
+    startCompletionCooldown(TASK_COMPLETION_COOLDOWN_MS);
     setClockNow(Date.now());
   };
 
@@ -195,12 +263,21 @@ export default function DashboardScreen() {
     setSuggestedTasks((prev) => prev.filter((_, index) => index !== indexToRemove));
   };
 
-  const handleGenerateSuggestion = async (category: WellnessCategory) => {
+  const handleToggleSuggestionRoutine = (indexToUpdate: number) => {
+    setSuggestedTasks((prev) =>
+      prev.map((task, index) =>
+        index === indexToUpdate ? { ...task, isRoutine: !task.isRoutine } : task
+      )
+    );
+  };
+
+  const handleGenerateSuggestion = async (category: WellnessCategory, focusText: string) => {
     if (isGeneratingSuggestion) return;
 
     setIsGeneratingSuggestion(true);
     try {
-      const suggestions = await generateGeminiTaskSuggestions(category);
+      const existingTitles = tasks.map((task) => task.title);
+      const suggestions = await generateGeminiTaskSuggestions(category, existingTitles, { focusText });
       setSuggestedTasks(suggestions);
       setIsTaskModalOpen(false);
       setIsSuggestionReviewOpen(true);
@@ -212,6 +289,16 @@ export default function DashboardScreen() {
     }
   };
 
+  const handleAcceptStarterTasks = () => {
+    acceptStarterTasks();
+    setIsStarterTasksPromptOpen(false);
+  };
+
+  const handleDeclineStarterTasks = () => {
+    declineStarterTasks();
+    setIsStarterTasksPromptOpen(false);
+  };
+
   const handleConfirmAddSuggestions = () => {
     if (suggestedTasks.length === 0) return;
     suggestedTasks.forEach((task) => {
@@ -219,6 +306,7 @@ export default function DashboardScreen() {
         title: task.title,
         detail: task.optional_detail,
         due: 'Today',
+        isRoutine: Boolean(task.isRoutine),
       });
     });
 
@@ -233,55 +321,127 @@ export default function DashboardScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.screenTitle, { color: theme.subtle }]}>Home</Text>
+        <View style={styles.heroSection}>
+          <View style={styles.heroTextWrap}>
+            <Text style={[styles.screenTitle, { color: theme.subtle }]}>Today</Text>
+            <Text style={[styles.heroTitle, { color: theme.text }]}>
+              {greeting}, {displayName || 'Friend'}
+            </Text>
+            <Text style={[styles.heroSubtitle, { color: theme.muted }]}>{progressLabel}</Text>
+          </View>
+          <View style={[styles.heroMark, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
+            <Text style={[styles.heroMarkText, { color: theme.primaryStrong }]}>
+              {selectedPersona === 'cat' ? 'C' : 'W'}
+            </Text>
+          </View>
+        </View>
 
-        <AvatarSection greeting={greeting} name={displayName || 'Friend'} />
+        <View style={[styles.characterCard, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
+          <View style={styles.characterArea}>
+            {AvatarComponent && (
+              <AvatarComponent
+                eyeColor={eyeColor}
+                faceColor={faceColor}
+                bodyColor={bodyColor}
+                presentation="peek"
+              />
+            )}
+          </View>
+        </View>
 
         <View style={styles.topCards}>
           <ProgressBar completed={completedCount} total={totalCount} />
           <WeeklyProgressCard />
-          <QuoteCard quote={quote} />
         </View>
 
-        <View style={[styles.moodCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <Text style={[styles.moodTitle, { color: theme.textStrong }]}>Mood check-in</Text>
-          <View style={styles.moodOptions}>
-            {MOOD_OPTIONS.map((mood) => {
-              const isActive = todayMood === mood.key;
-              return (
+        <QuoteCard quote={quote} />
+
+        {shouldShowHomeGuide && (
+          <View
+            style={[
+              styles.guideCard,
+              { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow },
+            ]}
+          >
+            <View style={styles.guideHeader}>
+              <View style={styles.guideTitleWrap}>
+                <Text style={[styles.guideKicker, { color: theme.subtle }]}>New here?</Text>
+                <Text style={[styles.guideTitle, { color: theme.textStrong }]}>What can Wenwen help with?</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss Wenwen guide"
+                onPress={dismissHomeGuide}
+                style={[styles.guideCloseButton, { backgroundColor: theme.softSurface }]}
+              >
+                <Ionicons name="close" size={16} color={theme.muted} />
+              </Pressable>
+            </View>
+
+            <View style={styles.guideList}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Add a small task"
+                onPress={() => handleOpenGuideAction('tasks')}
+                style={({ pressed }) => [
+                  styles.guideItem,
+                  { backgroundColor: theme.softSurface, borderColor: theme.softBorder },
+                  pressed && styles.guideItemPressed,
+                ]}
+              >
+                <View style={[styles.guideIcon, { backgroundColor: theme.primarySoft }]}>
+                  <Ionicons name="checkmark-circle-outline" size={18} color={theme.primaryStrong} />
+                </View>
+                <View style={styles.guideTextWrap}>
+                  <Text style={[styles.guideItemTitle, { color: theme.textStrong }]}>Tasks</Text>
+                  <Text style={[styles.guideItemBody, { color: theme.muted }]}>Choose one small action for today.</Text>
+                </View>
+              </Pressable>
+
+              {!homeGuide.visitedJournal && (
                 <Pressable
-                  key={mood.key}
                   accessibilityRole="button"
-                  accessibilityLabel={`Mood ${mood.label}`}
-                  onPress={() => handleSelectMood(mood.key)}
+                  accessibilityLabel="Open journal"
+                  onPress={() => handleOpenGuideAction('journal')}
                   style={({ pressed }) => [
-                    styles.moodChip,
-                    {
-                      backgroundColor: isActive ? theme.primarySoft : theme.softSurface,
-                      borderColor: isActive ? theme.primary : theme.softBorder,
-                    },
-                    pressed && styles.moodChipPressed,
+                    styles.guideItem,
+                    { backgroundColor: theme.softSurface, borderColor: theme.softBorder },
+                    pressed && styles.guideItemPressed,
                   ]}
                 >
-                  <Text
-                    style={[
-                      styles.moodChipText,
-                      { color: isActive ? theme.primaryStrong : theme.muted },
-                    ]}
-                  >
-                    {mood.label}
-                  </Text>
+                  <View style={[styles.guideIcon, { backgroundColor: theme.primarySoft }]}>
+                    <Ionicons name="journal-outline" size={18} color={theme.primaryStrong} />
+                  </View>
+                  <View style={styles.guideTextWrap}>
+                    <Text style={[styles.guideItemTitle, { color: theme.textStrong }]}>Journal</Text>
+                    <Text style={[styles.guideItemBody, { color: theme.muted }]}>Unload thoughts when your mind feels full.</Text>
+                  </View>
                 </Pressable>
-              );
-            })}
-          </View>
-        </View>
+              )}
 
-        <View style={styles.characterArea}>
-          {WenwenComponent && (
-            <WenwenComponent eyeColor={eyeColor} faceColor={faceColor} bodyColor={bodyColor} />
-          )}
-        </View>
+              {!homeGuide.visitedCompanion && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open companion"
+                  onPress={() => handleOpenGuideAction('companion')}
+                  style={({ pressed }) => [
+                    styles.guideItem,
+                    { backgroundColor: theme.softSurface, borderColor: theme.softBorder },
+                    pressed && styles.guideItemPressed,
+                  ]}
+                >
+                  <View style={[styles.guideIcon, { backgroundColor: theme.primarySoft }]}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.primaryStrong} />
+                  </View>
+                  <View style={styles.guideTextWrap}>
+                    <Text style={[styles.guideItemTitle, { color: theme.textStrong }]}>Companion</Text>
+                    <Text style={[styles.guideItemBody, { color: theme.muted }]}>Talk with Wenwen when you want support.</Text>
+                  </View>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
 
         <View style={styles.taskHeaderRow}>
           <Text style={[styles.sectionTitle, { color: theme.textStrong }]}>Today&apos;s Tasks</Text>
@@ -351,6 +511,40 @@ export default function DashboardScreen() {
       </ScrollView>
 
       <Modal
+        visible={isStarterTasksPromptOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={handleDeclineStarterTasks}
+      >
+        <Pressable style={styles.modalOverlay} onPress={handleDeclineStarterTasks}>
+          <Pressable style={[styles.confirmCard, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => undefined}>
+            <Text style={[styles.confirmTitle, { color: theme.text }]}>Start with suggested tasks?</Text>
+            <Text style={[styles.confirmBody, { color: theme.muted }]}>
+              We can add 3 starter tasks to help you begin. You can also skip and keep your task list empty.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Skip starter tasks"
+                onPress={handleDeclineStarterTasks}
+                style={[styles.confirmCancelButton, { backgroundColor: theme.softSurface }]}
+              >
+                <Text style={[styles.confirmCancelText, { color: theme.muted }]}>Skip for now</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Add starter tasks"
+                onPress={handleAcceptStarterTasks}
+                style={[styles.starterPrimaryButton, { backgroundColor: theme.primary }]}
+              >
+                <Text style={styles.starterPrimaryText}>Add starter tasks</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
         visible={isTaskModalOpen}
         transparent
         animationType="fade"
@@ -369,14 +563,19 @@ export default function DashboardScreen() {
                 <Ionicons name="close" size={18} color={theme.muted} />
               </TouchableOpacity>
             </View>
-            <TaskComposer
-              onCreateTask={handleCreateTask}
-              selectedCategory={selectedCategory}
-              onSelectCategory={setSelectedCategory}
-              onGenerateSuggestion={handleGenerateSuggestion}
-              isGeneratingSuggestion={isGeneratingSuggestion}
-              suggestedTasks={suggestedTasks}
-            />
+            <ScrollView
+              contentContainerStyle={styles.taskComposerScroll}
+              showsVerticalScrollIndicator={false}
+            >
+              <TaskComposer
+                onCreateTask={handleCreateTask}
+                selectedCategory={selectedCategory}
+                onSelectCategory={setSelectedCategory}
+                onGenerateSuggestion={handleGenerateSuggestion}
+                isGeneratingSuggestion={isGeneratingSuggestion}
+                suggestedTasks={suggestedTasks}
+              />
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -420,6 +619,31 @@ export default function DashboardScreen() {
                       </TouchableOpacity>
                     </View>
                     <Text style={[styles.suggestionItemDetail, { color: theme.muted }]}>{task.optional_detail}</Text>
+                    <TouchableOpacity
+                      accessibilityRole="checkbox"
+                      accessibilityLabel={`${task.title} repeats daily`}
+                      accessibilityState={{ checked: Boolean(task.isRoutine) }}
+                      onPress={() => handleToggleSuggestionRoutine(index)}
+                      style={styles.suggestionRoutineRow}
+                    >
+                      <View
+                        style={[
+                          styles.suggestionRoutineCheck,
+                          {
+                            backgroundColor: task.isRoutine ? theme.primary : theme.surface,
+                            borderColor: task.isRoutine ? theme.primary : theme.softBorder,
+                          },
+                        ]}
+                      >
+                        {task.isRoutine && <Ionicons name="checkmark" size={12} color="#FFFFFF" />}
+                      </View>
+                      <View style={styles.suggestionRoutineTextWrap}>
+                        <Text style={[styles.suggestionRoutineTitle, { color: theme.textStrong }]}>Daily routine</Text>
+                        <Text style={[styles.suggestionRoutineCaption, { color: theme.muted }]}>
+                          {task.isRoutine ? 'Repeats tomorrow.' : 'Today only.'}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
                 ))
               )}
@@ -499,73 +723,156 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 56,
+    paddingTop: 48,
     paddingHorizontal: 20,
     paddingBottom: 120,
   },
+  heroSection: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginBottom: 18,
+  },
+  heroTextWrap: {
+    flex: 1,
+  },
   screenTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    marginBottom: 8,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
-  topCards: {
-    gap: 10,
+  heroTitle: {
+    fontSize: 30,
+    fontWeight: '900',
+    marginTop: 6,
   },
-  moodCard: {
-    borderRadius: 18,
+  heroSubtitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 20,
+    marginTop: 6,
+  },
+  heroMark: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroMarkText: {
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  topCards: {
+    gap: 12,
+    marginBottom: 12,
+  },
+  guideCard: {
+    borderRadius: 24,
     borderWidth: 1,
     padding: 14,
-    marginTop: 10,
+    marginBottom: 16,
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 1,
   },
-  moodTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 10,
-  },
-  moodOptions: {
+  guideHeader: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 12,
+  },
+  guideTitleWrap: {
+    flex: 1,
+  },
+  guideKicker: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+  },
+  guideTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    marginTop: 3,
+  },
+  guideCloseButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guideList: {
     gap: 8,
   },
-  moodChip: {
-    minHeight: 34,
-    borderRadius: 17,
+  guideItem: {
+    minHeight: 68,
+    borderRadius: 18,
     borderWidth: 1,
-    paddingHorizontal: 12,
+    padding: 12,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 11,
   },
-  moodChipPressed: {
+  guideItemPressed: {
     opacity: 0.86,
   },
-  moodChipText: {
+  guideIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guideTextWrap: {
+    flex: 1,
+  },
+  guideItemTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  guideItemBody: {
     fontSize: 12,
-    fontWeight: '800',
+    lineHeight: 17,
+    fontWeight: '700',
+    marginTop: 3,
+  },
+  characterCard: {
+    borderRadius: 28,
+    borderWidth: 1,
+    marginBottom: 14,
+    overflow: 'hidden',
+    shadowOpacity: 0.05,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 2,
   },
   characterArea: {
-    height: 245,
+    height: 168,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 8,
   },
   taskHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 2,
+    marginBottom: 8,
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '900',
   },
   resetButton: {
-    minHeight: 36,
-    minWidth: 66,
+    minHeight: 34,
+    minWidth: 64,
     paddingHorizontal: 14,
-    borderRadius: 10,
+    borderRadius: 17,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
@@ -589,8 +896,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   suggestRow: {
-    marginTop: 10,
-    marginBottom: 10,
+    marginBottom: 12,
     paddingHorizontal: 2,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -603,9 +909,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   suggestButton: {
-    minHeight: 38,
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    minHeight: 42,
+    borderRadius: 21,
+    paddingHorizontal: 14,
     justifyContent: 'center',
     alignItems: 'center',
     flexDirection: 'row',
@@ -668,6 +974,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     padding: 16,
+    maxHeight: '88%',
     shadowColor: '#28384E',
     shadowOpacity: 0.18,
     shadowRadius: 28,
@@ -683,6 +990,9 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: '800',
+  },
+  taskComposerScroll: {
+    paddingBottom: 2,
   },
   modalCloseButton: {
     width: 34,
@@ -723,6 +1033,19 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
     justifyContent: 'center',
+  },
+  starterPrimaryButton: {
+    minHeight: 36,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+  },
+  starterPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
   confirmCancelText: {
     fontSize: 12,
@@ -790,6 +1113,32 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
     lineHeight: 18,
+  },
+  suggestionRoutineRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  suggestionRoutineCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestionRoutineTextWrap: {
+    flex: 1,
+  },
+  suggestionRoutineTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  suggestionRoutineCaption: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
   },
   bottomTabWrap: {
     position: 'absolute',

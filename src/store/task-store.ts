@@ -11,16 +11,22 @@ type CreateTaskInput = {
   title: string;
   detail?: string;
   due?: string;
+  isRoutine?: boolean;
 };
 
 type TaskStore = {
   tasks: TaskItem[];
   lastDailyReset: string;
+  completionCooldownUntil: number;
   hasHydrated: boolean;
+  hasDecidedStarterTasks: boolean;
   initializeTasks: () => void;
+  acceptStarterTasks: () => void;
+  declineStarterTasks: () => void;
   addTask: (input: CreateTaskInput) => void;
   toggleTask: (id: string) => void;
   deleteTask: (id: string) => void;
+  startCompletionCooldown: (durationMs: number) => void;
   resetDailyTasks: (force?: boolean) => void;
   setHasHydrated: (value: boolean) => void;
 };
@@ -39,6 +45,7 @@ function archiveTasksForDate(dateKey: string, tasks: TaskItem[]) {
       title: task.title,
       detail: task.detail,
       done: task.done,
+      isRoutine: Boolean(task.isRoutine),
     }))
   );
 }
@@ -48,21 +55,38 @@ export const useTaskStore = create<TaskStore>()(
     (set, get) => ({
       tasks: [],
       lastDailyReset: '',
+      completionCooldownUntil: 0,
       hasHydrated: false,
+      hasDecidedStarterTasks: false,
 
       setHasHydrated: (value) => set({ hasHydrated: value }),
 
       initializeTasks: () => {
-        if (get().tasks.length > 0) return;
+        const now = new Date();
+        const today = getLocalDateKey(now);
+        if (get().lastDailyReset) return;
+        set({ lastDailyReset: today });
+      },
+
+      acceptStarterTasks: () => {
+        if (get().tasks.length > 0) {
+          set({ hasDecidedStarterTasks: true });
+          return;
+        }
 
         const now = new Date();
         set({
           tasks: createDefaultTasks(now),
           lastDailyReset: getLocalDateKey(now),
+          hasDecidedStarterTasks: true,
         });
       },
 
-      addTask: ({ title, detail, due }) => {
+      declineStarterTasks: () => {
+        set({ hasDecidedStarterTasks: true });
+      },
+
+      addTask: ({ title, detail, due, isRoutine }) => {
         const cleanTitle = title.trim();
         if (!cleanTitle) return;
 
@@ -74,12 +98,14 @@ export const useTaskStore = create<TaskStore>()(
           detail: detail?.trim() || 'Custom task',
           due: due?.trim() || 'Today',
           done: false,
+          isRoutine: Boolean(isRoutine),
           createdAt: nowIso,
           updatedAt: nowIso,
         };
 
         set((state) => ({
           tasks: [newTask, ...state.tasks],
+          hasDecidedStarterTasks: true,
         }));
       },
 
@@ -100,25 +126,50 @@ export const useTaskStore = create<TaskStore>()(
         }));
       },
 
+      startCompletionCooldown: (durationMs) => {
+        set({ completionCooldownUntil: Date.now() + durationMs });
+      },
+
       resetDailyTasks: (force = false) => {
         const today = getLocalDateKey(new Date());
         const { lastDailyReset, tasks } = get();
 
         if (!force && lastDailyReset === today) return;
 
-        if (lastDailyReset && lastDailyReset !== today) {
-          archiveTasksForDate(lastDailyReset, tasks);
+        if (force) {
+          const nowIso = new Date().toISOString();
+          set((state) => ({
+            tasks: state.tasks.map((task) => ({
+              ...task,
+              done: false,
+              updatedAt: nowIso,
+            })),
+            lastDailyReset: today,
+          }));
+          return;
         }
 
-        const nowIso = new Date().toISOString();
-        set((state) => ({
-          tasks: state.tasks.map((task) => ({
-            ...task,
-            done: false,
-            updatedAt: nowIso,
-          })),
-          lastDailyReset: today,
-        }));
+        if (lastDailyReset && lastDailyReset !== today) {
+          archiveTasksForDate(lastDailyReset, tasks);
+          const nowIso = new Date().toISOString();
+          const routineTasks = tasks
+            .filter((task) => task.isRoutine)
+            .map((task) => ({
+              ...task,
+              done: false,
+              due: 'Today',
+              updatedAt: nowIso,
+            }));
+
+          set({
+            tasks: routineTasks,
+            lastDailyReset: today,
+            completionCooldownUntil: 0,
+          });
+          return;
+        }
+
+        set({ lastDailyReset: today });
       },
     }),
     {
@@ -127,6 +178,8 @@ export const useTaskStore = create<TaskStore>()(
       partialize: (state) => ({
         tasks: state.tasks,
         lastDailyReset: state.lastDailyReset,
+        completionCooldownUntil: state.completionCooldownUntil,
+        hasDecidedStarterTasks: state.hasDecidedStarterTasks,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

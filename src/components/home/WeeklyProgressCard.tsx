@@ -56,11 +56,11 @@ export function WeeklyProgressCard() {
     <View style={[styles.container, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
       <View style={styles.headerRow}>
         <View>
-          <Text style={[styles.label, { color: theme.textStrong }]}>This week</Text>
-          <Text style={[styles.caption, { color: theme.muted }]}>Last 7 days.</Text>
+          <Text style={[styles.label, { color: theme.textStrong }]}>7-day rhythm</Text>
+          <Text style={[styles.caption, { color: theme.muted }]}>Small activity signals</Text>
         </View>
-        <View style={[styles.iconWrap, { backgroundColor: theme.primarySoft }]}>
-          <Ionicons name="leaf-outline" size={18} color={theme.primaryStrong} />
+        <View style={[styles.iconWrap, { backgroundColor: '#FFF4D8' }]}>
+          <Ionicons name="pulse-outline" size={18} color="#B7791F" />
         </View>
       </View>
 
@@ -84,13 +84,13 @@ export function WeeklyProgressCard() {
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    padding: 14,
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
+    padding: 16,
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 1,
   },
   headerRow: {
     flexDirection: 'row',
@@ -99,8 +99,8 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '800',
+    fontSize: 16,
+    fontWeight: '900',
   },
   caption: {
     fontSize: 12,
@@ -108,22 +108,25 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
   iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
   statsRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 14,
+    gap: 10,
+    marginTop: 16,
   },
   statItem: {
     flex: 1,
+    minHeight: 58,
+    borderRadius: 16,
+    justifyContent: 'center',
   },
   statValue: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '900',
   },
   statLabel: {

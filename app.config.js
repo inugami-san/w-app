@@ -33,9 +33,9 @@ export default {
       'expo-splash-screen',
       {
         image: './assets/images/splash-icon.png',
-        imageWidth: 200,
+        imageWidth: 280,
         resizeMode: 'contain',
-        backgroundColor: '#ffffff',
+        backgroundColor: '#F7FAF8',
       },
     ],
     'expo-sqlite',

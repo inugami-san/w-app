@@ -22,6 +22,7 @@ export function ProgressBar({ completed, total }: ProgressBarProps) {
     if (total <= 0) return 0;
     return Math.max(0, Math.min(1, completed / total));
   }, [completed, total]);
+  const progressPercent = Math.round(progress * 100);
 
   useEffect(() => {
     if (trackWidth <= 0) return;
@@ -50,49 +51,63 @@ export function ProgressBar({ completed, total }: ProgressBarProps) {
       ]}
     >
       <View style={styles.headerRow}>
-        <Text style={[styles.label, { color: theme.textStrong }]}>Today&apos;s Progress</Text>
-        <Text style={[styles.value, { color: theme.primary }]}>{completed}/{total}</Text>
+        <View>
+          <Text style={[styles.label, { color: theme.textStrong }]}>Progress</Text>
+          <Text style={[styles.caption, { color: theme.muted }]}>Today&apos;s tasks</Text>
+        </View>
+        <Text style={[styles.value, { color: theme.primary }]}>{progressPercent}%</Text>
       </View>
 
       <View style={[styles.track, { backgroundColor: theme.softSurface }]} onLayout={onTrackLayout}>
         <Animated.View style={[styles.fill, { backgroundColor: theme.primary }, barStyle]} />
       </View>
+      <Text style={[styles.meta, { color: theme.subtle }]}>{completed} of {total} complete</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 18,
+    borderRadius: 20,
     borderWidth: 1,
-    padding: 14,
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 2,
+    padding: 16,
+    shadowOpacity: 0.04,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 1,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   label: {
-    fontSize: 14,
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  caption: {
+    fontSize: 12,
     fontWeight: '700',
+    marginTop: 2,
   },
   value: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '900',
   },
   track: {
     width: '100%',
-    height: 10,
+    height: 8,
     borderRadius: 999,
     overflow: 'hidden',
   },
   fill: {
     height: '100%',
     borderRadius: 999,
+  },
+  meta: {
+    marginTop: 9,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });

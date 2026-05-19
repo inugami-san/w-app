@@ -2,6 +2,7 @@ import React, { ComponentType, useCallback, useEffect, useMemo, useRef, useState
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -27,6 +28,12 @@ import {
   createCompanionMessage,
   useCompanionStore,
 } from '@/src/store/companion-store';
+import {
+  DEFAULT_AVATAR_COLORS,
+  DEFAULT_AVATAR_PERSONA,
+  type AvatarPersona,
+  usePreferencesStore,
+} from '@/src/store/preferences-store';
 import { useAppTheme } from '@/src/theme/app-theme';
 import type { CompanionChatSummary, CompanionDayEntry, CompanionMessage } from '@/src/types/companion';
 import { getLocalDateKey } from '@/src/utils/date';
@@ -68,12 +75,14 @@ export default function CompanionScreen() {
   const ensureDay = useCompanionStore((state) => state.ensureDay);
   const addMessage = useCompanionStore((state) => state.addMessage);
   const addSummary = useCompanionStore((state) => state.addSummary);
-  const lastDailyReviewShownDateKey = useCompanionStore((state) => state.lastDailyReviewShownDateKey);
-  const setDailyReviewShownDateKey = useCompanionStore((state) => state.setDailyReviewShownDateKey);
   const hasHydrated = useCompanionStore((state) => state.hasHydrated);
+  const avatarColors = usePreferencesStore((state) => state.avatarColors);
+  const avatarPersona = usePreferencesStore((state) => state.avatarPersona);
+  const markHomeGuideFeatureVisited = usePreferencesStore((state) => state.markHomeGuideFeatureVisited);
   const todayEntry = entries[today];
   const messages = todayEntry?.messages ?? fallbackMessages;
-  const [WenwenComponent, setWenwenComponent] = useState<ComponentType<WenwenProps> | null>(null);
+  const [avatarComponents, setAvatarComponents] =
+    useState<Record<AvatarPersona, ComponentType<WenwenProps>> | null>(null);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [reviewDateKey, setReviewDateKey] = useState('');
@@ -81,23 +90,126 @@ export default function CompanionScreen() {
   const [isReviewLoading, setIsReviewLoading] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<CompanionChatSummary | null>(null);
   const [reviewError, setReviewError] = useState('');
-  const autoReviewAttemptedRef = useRef(false);
   const chatScrollRef = useRef<ScrollView | null>(null);
+  const inputRef = useRef<TextInput | null>(null);
+  const avatarScale = useRef(new Animated.Value(1)).current;
+  const avatarTranslateY = useRef(new Animated.Value(0)).current;
+  const avatarRotate = useRef(new Animated.Value(0)).current;
+  const avatarGlow = useRef(new Animated.Value(0)).current;
+  const lastAnimatedMessageIdRef = useRef('');
   const canSend = input.trim().length > 0 && !isSending;
   const chatPanelHeight = Math.min(Math.max(windowHeight * 0.46, 360), 520);
   const webInputReset = Platform.OS === 'web' ? ({ outlineStyle: 'none' } as unknown as TextStyle) : null;
+  const selectedPersona = avatarPersona ?? DEFAULT_AVATAR_PERSONA;
+  const AvatarComponent = avatarComponents?.[selectedPersona] ?? null;
 
   const historyKeys = useMemo(() => {
     return Object.keys(entries)
+      .filter((dateKey) => dateKey !== today)
       .filter((dateKey) => hasConversation(entries[dateKey]))
       .sort((a, b) => b.localeCompare(a));
-  }, [entries]);
+  }, [entries, today]);
 
   const yesterdayEntry = entries[yesterday];
   const hasYesterdayReview = hasConversation(yesterdayEntry);
   const reviewEntry = reviewDateKey ? entries[reviewDateKey] : undefined;
   const reviewMessages = reviewEntry?.messages ?? [];
   const userMessageCount = messages.filter((message) => message.role === 'user').length;
+  const avatarRotateInterpolate = avatarRotate.interpolate({
+    inputRange: [-1, 1],
+    outputRange: ['-5deg', '5deg'],
+  });
+
+  const runAvatarReaction = useCallback(
+    (role: CompanionMessage['role']) => {
+      avatarScale.stopAnimation();
+      avatarTranslateY.stopAnimation();
+      avatarRotate.stopAnimation();
+      avatarGlow.stopAnimation();
+      avatarScale.setValue(1);
+      avatarTranslateY.setValue(0);
+      avatarRotate.setValue(0);
+      avatarGlow.setValue(0);
+
+      if (role === 'user') {
+        Animated.parallel([
+          Animated.sequence([
+            Animated.timing(avatarScale, {
+              toValue: 1.035,
+              duration: 130,
+              useNativeDriver: true,
+            }),
+            Animated.spring(avatarScale, {
+              toValue: 1,
+              friction: 5,
+              tension: 120,
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.sequence([
+            Animated.timing(avatarRotate, {
+              toValue: -0.65,
+              duration: 120,
+              useNativeDriver: true,
+            }),
+            Animated.spring(avatarRotate, {
+              toValue: 0,
+              friction: 6,
+              tension: 110,
+              useNativeDriver: true,
+            }),
+          ]),
+        ]).start();
+        return;
+      }
+
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(avatarTranslateY, {
+            toValue: -10,
+            duration: 150,
+            useNativeDriver: true,
+          }),
+          Animated.spring(avatarTranslateY, {
+            toValue: 0,
+            friction: 5,
+            tension: 120,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.timing(avatarScale, {
+            toValue: 1.075,
+            duration: 160,
+            useNativeDriver: true,
+          }),
+          Animated.spring(avatarScale, {
+            toValue: 1,
+            friction: 5,
+            tension: 120,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.timing(avatarGlow, {
+            toValue: 1,
+            duration: 130,
+            useNativeDriver: true,
+          }),
+          Animated.timing(avatarGlow, {
+            toValue: 0,
+            duration: 420,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]).start();
+    },
+    [avatarGlow, avatarRotate, avatarScale, avatarTranslateY]
+  );
+
+  useEffect(() => {
+    markHomeGuideFeatureVisited('companion');
+  }, [markHomeGuideFeatureVisited]);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -114,12 +226,18 @@ export default function CompanionScreen() {
         });
       }
 
-      const mod = await import('@/components/WenwenBase');
-      setWenwenComponent(() => mod.WenwenBase as ComponentType<WenwenProps>);
+      const [botMod, catMod] = await Promise.all([
+        import('@/components/WenwenBase'),
+        import('@/components/CatBase'),
+      ]);
+      setAvatarComponents({
+        bot: botMod.WenwenBase as ComponentType<WenwenProps>,
+        cat: catMod.CatBase as ComponentType<WenwenProps>,
+      });
     };
 
     load().catch(() => {
-      setWenwenComponent(null);
+      setAvatarComponents(null);
     });
   }, []);
 
@@ -130,6 +248,20 @@ export default function CompanionScreen() {
 
     return () => clearTimeout(timeout);
   }, [messages.length, isSending]);
+
+  useEffect(() => {
+    const latestMessage = messages[messages.length - 1];
+    if (!latestMessage) return;
+
+    if (!lastAnimatedMessageIdRef.current) {
+      lastAnimatedMessageIdRef.current = latestMessage.id;
+      return;
+    }
+
+    if (lastAnimatedMessageIdRef.current === latestMessage.id) return;
+    lastAnimatedMessageIdRef.current = latestMessage.id;
+    runAvatarReaction(latestMessage.role);
+  }, [messages, runAvatarReaction]);
 
   const handleTabPress = (tab: DashboardTabKey) => {
     if (tab === 'companion') return;
@@ -151,15 +283,11 @@ export default function CompanionScreen() {
   };
 
   const openReviewForDate = useCallback(
-    async (dateKey: string, options?: { markShownToday?: boolean }) => {
+    async (dateKey: string) => {
       const entry = useCompanionStore.getState().entries[dateKey];
       if (!hasConversation(entry)) return;
 
       const summaryMessages = entry?.messages ?? [];
-
-      if (options?.markShownToday) {
-        setDailyReviewShownDateKey(today);
-      }
 
       setReviewDateKey(dateKey);
       setIsReviewModalVisible(true);
@@ -192,18 +320,8 @@ export default function CompanionScreen() {
         setIsReviewLoading(false);
       }
     },
-    [addSummary, setDailyReviewShownDateKey, today]
+    [addSummary]
   );
-
-  useEffect(() => {
-    if (!hasHydrated) return;
-    if (autoReviewAttemptedRef.current) return;
-    if (lastDailyReviewShownDateKey === today) return;
-    if (!hasYesterdayReview) return;
-
-    autoReviewAttemptedRef.current = true;
-    void openReviewForDate(yesterday, { markShownToday: true });
-  }, [hasHydrated, hasYesterdayReview, lastDailyReviewShownDateKey, openReviewForDate, today, yesterday]);
 
   const handleSend = async () => {
     const cleanInput = input.trim();
@@ -216,7 +334,7 @@ export default function CompanionScreen() {
     setIsSending(true);
 
     try {
-      const reply = await generateCompanionReply(nextMessages);
+      const reply = await generateCompanionReply(nextMessages, { persona: selectedPersona });
       addMessage(today, createCompanionMessage('assistant', reply));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to reach Wenwen right now.';
@@ -224,6 +342,11 @@ export default function CompanionScreen() {
     } finally {
       setIsSending(false);
     }
+  };
+
+  const handleFocusComposer = () => {
+    chatScrollRef.current?.scrollToEnd({ animated: true });
+    inputRef.current?.focus();
   };
 
   return (
@@ -239,13 +362,44 @@ export default function CompanionScreen() {
         </Text>
 
         <View style={styles.avatarStage}>
-          <View style={[styles.avatarShell, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
-            {WenwenComponent ? (
-              <WenwenComponent eyeColor={theme.primary} faceColor={theme.surface} bodyColor={theme.softSurface} />
-            ) : (
-              <Text style={[styles.avatarFallback, { color: theme.primaryStrong }]}>W</Text>
-            )}
-          </View>
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.avatarGlow,
+              {
+                backgroundColor: theme.primary,
+                opacity: avatarGlow,
+                transform: [{ scale: avatarScale }],
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.avatarMotion,
+              {
+                transform: [
+                  { translateY: avatarTranslateY },
+                  { rotate: avatarRotateInterpolate },
+                  { scale: avatarScale },
+                ],
+              },
+            ]}
+          >
+            <View style={[styles.avatarShell, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
+              {AvatarComponent ? (
+                <AvatarComponent
+                  eyeColor={avatarColors?.eyeColor ?? DEFAULT_AVATAR_COLORS.eyeColor}
+                  faceColor={avatarColors?.faceColor ?? DEFAULT_AVATAR_COLORS.faceColor}
+                  bodyColor={avatarColors?.bodyColor ?? DEFAULT_AVATAR_COLORS.bodyColor}
+                  presentation="peek"
+                />
+              ) : (
+                <Text style={[styles.avatarFallback, { color: theme.primaryStrong }]}>
+                  {selectedPersona === 'cat' ? 'C' : 'W'}
+                </Text>
+              )}
+            </View>
+          </Animated.View>
         </View>
 
         <View
@@ -327,6 +481,7 @@ export default function CompanionScreen() {
 
           <View style={[styles.composerBar, { backgroundColor: theme.surface, borderColor: theme.softBorder }]}>
             <TextInput
+              ref={inputRef}
               value={input}
               onChangeText={setInput}
               placeholder="Type a thought or update..."
@@ -368,8 +523,16 @@ export default function CompanionScreen() {
             <Ionicons name="chatbubble-ellipses-outline" size={22} color={theme.primaryStrong} />
             <Text style={[styles.emptyTitle, { color: theme.textStrong }]}>No chat history yet</Text>
             <Text style={[styles.emptyBody, { color: theme.muted }]}>
-              Send a message to start today&apos;s chat history.
+              Share what is on your mind, or ask for one small step.
             </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Start a chat"
+              onPress={handleFocusComposer}
+              style={[styles.emptyActionButton, { backgroundColor: theme.primary }]}
+            >
+              <Text style={styles.emptyActionText}>Start a chat</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.historyList}>
@@ -397,7 +560,6 @@ export default function CompanionScreen() {
                   <View style={styles.historyTextWrap}>
                     <Text style={[styles.historyDate, { color: theme.textStrong }]}>
                       {formatDateLabel(dateKey)}
-                      {dateKey === today ? ' · Today' : ''}
                     </Text>
                     <Text style={[styles.historyMeta, { color: theme.muted }]}>
                       {dayUserMessageCount} message{dayUserMessageCount === 1 ? '' : 's'} from you
@@ -513,11 +675,23 @@ const styles = StyleSheet.create({
   avatarStage: {
     alignItems: 'center',
     marginBottom: 14,
+    position: 'relative',
+  },
+  avatarMotion: {
+    width: 172,
+    height: 122,
+  },
+  avatarGlow: {
+    position: 'absolute',
+    width: 184,
+    height: 134,
+    borderRadius: 40,
+    top: -6,
   },
   avatarShell: {
-    width: 132,
-    height: 112,
-    borderRadius: 34,
+    width: 172,
+    height: 122,
+    borderRadius: 36,
     borderWidth: 1,
     overflow: 'hidden',
     alignItems: 'center',
@@ -666,6 +840,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     fontWeight: '600',
+  },
+  emptyActionButton: {
+    minHeight: 40,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  emptyActionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   historyList: {
     gap: 10,

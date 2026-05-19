@@ -1,8 +1,9 @@
 import React, { useState, useEffect, ComponentType } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { WenwenProps } from '@/components/WenwenBase';
+
+import type { WenwenProps } from '@/components/WenwenBase';
 
 export default function SplashScreen() {
   const [WenwenComponent, setWenwenComponent] = useState<ComponentType<WenwenProps> | null>(null);
@@ -35,16 +36,16 @@ export default function SplashScreen() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <View style={styles.container}>
-        <View style={styles.characterContainer}>
+        <View style={styles.splashCard}>
           {WenwenComponent && (
             <WenwenComponent
-              eyeColor="#00D4C2"
-              faceColor="#E2E8F0"
-              bodyColor="#F0F2F5"
+              eyeColor="#43DED5"
+              faceColor="#DDF5F1"
+              bodyColor="#F4F7F8"
+              presentation="peek"
             />
           )}
         </View>
-        <Text style={styles.title}>Your companion buddy</Text>
       </View>
     </GestureHandlerRootView>
   );
@@ -53,23 +54,27 @@ export default function SplashScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F7FAF8',
   },
   container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 32,
   },
-  characterContainer: {
+  splashCard: {
     width: '100%',
-    height: 400, // Fixed height to ensure character renders properly without layout shifting
-  },
-  title: {
-    marginTop: 20,
-    fontSize: 18,
-    color: '#26344D',
-    fontWeight: '600',
-    letterSpacing: 1.2,
-    opacity: 0.8,
+    maxWidth: 360,
+    height: 230,
+    borderRadius: 54,
+    overflow: 'hidden',
+    backgroundColor: '#EAF7F4',
+    borderWidth: 1,
+    borderColor: '#D7E8E3',
+    shadowColor: '#B8D7D0',
+    shadowOpacity: 0.22,
+    shadowRadius: 28,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 5,
   },
 });

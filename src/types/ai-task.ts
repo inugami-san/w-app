@@ -15,4 +15,5 @@ export type SuggestedTask = {
   title: string;
   optional_detail: string;
   datetime_added: string;
+  isRoutine?: boolean;
 };

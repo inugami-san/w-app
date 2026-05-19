@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import type { CompanionChatSummary, CompanionDayEntry, CompanionMessage } from '@/src/types/companion';
 
-export const COMPANION_WELCOME_TEXT = 'What do you want to sort out today?';
+export const COMPANION_WELCOME_TEXT = 'Tell me what is on your mind. I can help you sort it into one clear next step.';
 
 type CompanionStore = {
   entries: Record<string, CompanionDayEntry>;

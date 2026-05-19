@@ -5,10 +5,10 @@ import { WELLNESS_CATEGORIES, type SuggestedTask, type WellnessCategory } from '
 import { useAppTheme } from '@/src/theme/app-theme';
 
 type TaskComposerProps = {
-  onCreateTask: (title: string, detail: string) => void;
+  onCreateTask: (title: string, detail: string, isRoutine: boolean) => void;
   selectedCategory: WellnessCategory;
   onSelectCategory: (category: WellnessCategory) => void;
-  onGenerateSuggestion: (category: WellnessCategory) => void;
+  onGenerateSuggestion: (category: WellnessCategory, focusText: string) => void;
   isGeneratingSuggestion: boolean;
   suggestedTasks: SuggestedTask[];
 };
@@ -24,14 +24,17 @@ export function TaskComposer({
   const theme = useAppTheme();
   const [title, setTitle] = useState('');
   const [detail, setDetail] = useState('');
+  const [isRoutine, setIsRoutine] = useState(false);
+  const [focusText, setFocusText] = useState('');
 
   const handleCreate = () => {
     const cleanTitle = title.trim();
     if (!cleanTitle) return;
 
-    onCreateTask(cleanTitle, detail.trim());
+    onCreateTask(cleanTitle, detail.trim(), isRoutine);
     setTitle('');
     setDetail('');
+    setIsRoutine(false);
   };
 
   return (
@@ -69,6 +72,33 @@ export function TaskComposer({
         multiline
       />
       <Pressable
+        accessibilityRole="checkbox"
+        accessibilityLabel="Repeat this task daily"
+        accessibilityState={{ checked: isRoutine }}
+        onPress={() => setIsRoutine((value) => !value)}
+        style={({ pressed }) => [
+          styles.routineToggle,
+          { backgroundColor: theme.surface, borderColor: isRoutine ? theme.primary : theme.softBorder },
+          pressed && styles.buttonPressed,
+        ]}
+      >
+        <View
+          style={[
+            styles.checkbox,
+            {
+              backgroundColor: isRoutine ? theme.primary : theme.softSurface,
+              borderColor: isRoutine ? theme.primary : theme.softBorder,
+            },
+          ]}
+        >
+          {isRoutine && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
+        </View>
+        <View style={styles.routineTextWrap}>
+          <Text style={[styles.routineTitle, { color: theme.textStrong }]}>Daily routine</Text>
+          <Text style={[styles.routineCaption, { color: theme.muted }]}>Bring this task back tomorrow.</Text>
+        </View>
+      </Pressable>
+      <Pressable
         accessibilityRole="button"
         accessibilityLabel="Create task"
         onPress={handleCreate}
@@ -82,9 +112,21 @@ export function TaskComposer({
         <View style={styles.aiHeaderRow}>
           <View>
             <Text style={[styles.aiHeading, { color: theme.textStrong }]}>Need an idea?</Text>
-            <Text style={[styles.aiCaption, { color: theme.muted }]}>Choose a focus and generate task ideas.</Text>
+            <Text style={[styles.aiCaption, { color: theme.muted }]}>Choose a category and add an optional focus.</Text>
           </View>
         </View>
+        <TextInput
+          value={focusText}
+          onChangeText={setFocusText}
+          placeholder="Focus or goal, e.g. Study Japanese"
+          placeholderTextColor={theme.subtle}
+          style={[
+            styles.input,
+            styles.focusInput,
+            { backgroundColor: theme.surface, borderColor: theme.softBorder, color: theme.text },
+          ]}
+          returnKeyType="done"
+        />
         <View style={styles.chipsWrap}>
           {WELLNESS_CATEGORIES.map((category) => (
             <Pressable
@@ -121,7 +163,7 @@ export function TaskComposer({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Generate AI suggestion"
-          onPress={() => onGenerateSuggestion(selectedCategory)}
+          onPress={() => onGenerateSuggestion(selectedCategory, focusText.trim())}
           disabled={isGeneratingSuggestion}
           style={({ pressed }) => [
             styles.generateButton,
@@ -192,6 +234,36 @@ const styles = StyleSheet.create({
     minHeight: 64,
     textAlignVertical: 'top',
   },
+  routineToggle: {
+    minHeight: 54,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  routineTextWrap: {
+    flex: 1,
+  },
+  routineTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  routineCaption: {
+    marginTop: 2,
+    fontSize: 11,
+    fontWeight: '600',
+  },
   button: {
     minHeight: 46,
     borderRadius: 14,
@@ -227,6 +299,9 @@ const styles = StyleSheet.create({
   aiCaption: {
     fontSize: 12,
     lineHeight: 18,
+  },
+  focusInput: {
+    marginTop: 2,
   },
   chipsWrap: {
     flexDirection: 'row',

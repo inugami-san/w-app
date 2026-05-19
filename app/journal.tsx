@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -19,9 +19,10 @@ import { getMoodLabel } from '@/src/features/journal/moods';
 import { generateJournalSummary } from '@/src/services/gemini-journal-summary';
 import { scheduleJournalSummaryNotification } from '@/src/services/journal-notifications';
 import { useJournalStore } from '@/src/store/journal-store';
+import { usePreferencesStore } from '@/src/store/preferences-store';
 import { useTaskStore } from '@/src/store/task-store';
 import { useAppTheme } from '@/src/theme/app-theme';
-import type { JournalEntry, JournalSummary, JournalTaskSnapshot } from '@/src/types/journal';
+import type { JournalDailyContext, JournalEntry, JournalSummary, JournalTaskSnapshot } from '@/src/types/journal';
 import { getLocalDateKey } from '@/src/utils/date';
 
 function formatDateLabel(dateKey: string) {
@@ -40,14 +41,51 @@ function getPreviousDateKey(dateKey: string) {
   return getLocalDateKey(date);
 }
 
+function hasDailyContext(context: JournalDailyContext | undefined) {
+  return Boolean(context?.sleep || context?.outside || context?.movement);
+}
+
+function getDailyContextKey(context: JournalDailyContext | undefined) {
+  return JSON.stringify({
+    sleep: context?.sleep ?? '',
+    outside: Boolean(context?.outside),
+    movement: Boolean(context?.movement),
+  });
+}
+
+function getSleepContextLabel(sleep: JournalDailyContext['sleep']) {
+  if (sleep === 'low') return 'Low sleep';
+  if (sleep === 'okay') return 'Okay sleep';
+  if (sleep === 'rested') return 'Rested';
+  return '';
+}
+
+function getDailyContextLabels(context: JournalDailyContext | undefined) {
+  const labels: string[] = [];
+
+  const sleepLabel = getSleepContextLabel(context?.sleep);
+  if (sleepLabel) labels.push(`Sleep: ${sleepLabel}`);
+  if (context?.outside) labels.push('Went outside');
+  if (context?.movement) labels.push('Moved body');
+
+  return labels;
+}
+
+function getFeelingScoreLabel(score: number | null | undefined) {
+  return typeof score === 'number' ? `Feeling ${score}/10` : '';
+}
+
 function hasHistoryContent(entry: JournalEntry | undefined, dateKey: string, today: string) {
   if (!entry) return false;
+  if (dateKey === today) return false;
 
   const hasNote = entry.feelingNote.trim().length > 0;
   const hasSummary = entry.summaries.length > 0;
-  const hasTaskSnapshot = dateKey !== today && entry.tasks.length > 0;
+  const hasTaskSnapshot = entry.tasks.length > 0;
+  const hasContext = hasDailyContext(entry.dailyContext);
+  const hasFeelingScore = typeof entry.feelingScale?.score === 'number';
 
-  return hasNote || hasSummary || hasTaskSnapshot;
+  return hasNote || hasSummary || hasTaskSnapshot || hasContext || hasFeelingScore;
 }
 
 function getVisibleTasks(entry: JournalEntry | undefined, dateKey: string, today: string): JournalTaskSnapshot[] {
@@ -59,11 +97,11 @@ export default function JournalScreen() {
   const today = useMemo(() => getLocalDateKey(), []);
   const yesterday = useMemo(() => getPreviousDateKey(today), [today]);
   const entries = useJournalStore((state) => state.entries);
-  const lastDailyReviewShownDateKey = useJournalStore((state) => state.lastDailyReviewShownDateKey);
-  const setDailyReviewShownDateKey = useJournalStore((state) => state.setDailyReviewShownDateKey);
   const setFeelingNote = useJournalStore((state) => state.setFeelingNote);
+  const setEntryDailyContext = useJournalStore((state) => state.setDailyContext);
   const setTaskSnapshot = useJournalStore((state) => state.setTaskSnapshot);
   const addSummary = useJournalStore((state) => state.addSummary);
+  const markHomeGuideFeatureVisited = usePreferencesStore((state) => state.markHomeGuideFeatureVisited);
   const hasHydratedTasks = useTaskStore((state) => state.hasHydrated);
   const resetDailyTasks = useTaskStore((state) => state.resetDailyTasks);
   const theme = useAppTheme();
@@ -75,8 +113,6 @@ export default function JournalScreen() {
   const [isReviewLoading, setIsReviewLoading] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<JournalSummary | null>(null);
   const [reviewError, setReviewError] = useState('');
-  const autoReviewAttemptedRef = useRef(false);
-
   const dateKeys = useMemo(() => {
     return Object.keys(entries)
       .filter((dateKey) => hasHistoryContent(entries[dateKey], dateKey, today))
@@ -89,6 +125,12 @@ export default function JournalScreen() {
   const reviewTasks = getVisibleTasks(reviewEntry, reviewDateKey, today);
   const reviewFeelingNote = reviewEntry?.feelingNote.trim() ?? '';
   const reviewMoodLabel = getMoodLabel(reviewEntry?.mood);
+  const reviewDailyContextLabels = getDailyContextLabels(reviewEntry?.dailyContext);
+  const reviewFeelingScoreLabel = getFeelingScoreLabel(reviewEntry?.feelingScale?.score);
+
+  useEffect(() => {
+    markHomeGuideFeatureVisited('journal');
+  }, [markHomeGuideFeatureVisited]);
 
   useEffect(() => {
     if (hasHydratedTasks) {
@@ -136,23 +178,27 @@ export default function JournalScreen() {
   };
 
   const openReviewForDate = useCallback(
-    async (dateKey: string, options?: { markShownToday?: boolean }) => {
+    async (dateKey: string) => {
       const entry = useJournalStore.getState().entries[dateKey];
       if (!hasHistoryContent(entry, dateKey, today)) return;
 
       const tasks = getVisibleTasks(entry, dateKey, today);
       const feelingNote = entry?.feelingNote.trim() ?? '';
-
-      if (options?.markShownToday) {
-        setDailyReviewShownDateKey(today);
-      }
+      const entryDailyContext = entry?.dailyContext ?? {};
+      const feelingScore = entry?.feelingScale?.score;
 
       setReviewDateKey(dateKey);
       setIsReviewModalVisible(true);
       setReviewError('');
 
       const existingSummary =
-        entry?.summaries.find((summary) => summary.tasks.length === tasks.length && summary.feelingNote.trim() === feelingNote) ??
+        entry?.summaries.find(
+          (summary) =>
+            summary.tasks.length === tasks.length &&
+            summary.feelingNote.trim() === feelingNote &&
+            summary.feelingScore === feelingScore &&
+            getDailyContextKey(summary.dailyContext) === getDailyContextKey(entryDailyContext)
+        ) ??
         null;
       if (existingSummary) {
         setReviewSummary(existingSummary);
@@ -166,6 +212,8 @@ export default function JournalScreen() {
           dateKey,
           tasks,
           feelingNote,
+          dailyContext: entryDailyContext,
+          feelingScore,
           mood: entry?.mood,
         });
         const summary = addSummary({
@@ -174,6 +222,8 @@ export default function JournalScreen() {
           body: result.body,
           tasks,
           feelingNote,
+          dailyContext: entryDailyContext,
+          feelingScore,
           mood: entry?.mood,
         });
         setReviewSummary(summary);
@@ -185,27 +235,19 @@ export default function JournalScreen() {
         setIsReviewLoading(false);
       }
     },
-    [addSummary, setDailyReviewShownDateKey, today]
+    [addSummary, today]
   );
-
-  useEffect(() => {
-    if (autoReviewAttemptedRef.current) return;
-    if (lastDailyReviewShownDateKey === today) return;
-    if (!hasYesterdayReview) return;
-
-    autoReviewAttemptedRef.current = true;
-    void openReviewForDate(yesterday, { markShownToday: true });
-  }, [hasYesterdayReview, lastDailyReviewShownDateKey, openReviewForDate, today, yesterday]);
 
   const handleSaveJournal = async () => {
     const cleanNote = journalNote.trim();
     if (!cleanNote) {
-      Alert.alert('Write a note first', 'Add today’s note before saving this journal.');
+      Alert.alert('Write something first', 'Add a journal note before saving.');
       return;
     }
 
     setIsSavingJournal(true);
     setFeelingNote(today, cleanNote);
+    setEntryDailyContext(today, {});
     setTaskSnapshot(today, []);
 
     try {
@@ -213,6 +255,8 @@ export default function JournalScreen() {
         dateKey: today,
         tasks: [],
         feelingNote: cleanNote,
+        dailyContext: {},
+        feelingScore: entries[today]?.feelingScale?.score,
         mood: entries[today]?.mood,
       });
       const summary = addSummary({
@@ -221,6 +265,8 @@ export default function JournalScreen() {
         body: result.body,
         tasks: [],
         feelingNote: cleanNote,
+        dailyContext: {},
+        feelingScore: entries[today]?.feelingScale?.score,
         mood: entries[today]?.mood,
       });
       setReviewDateKey(today);
@@ -274,8 +320,16 @@ export default function JournalScreen() {
             <Ionicons name="journal-outline" size={24} color={theme.primaryStrong} />
             <Text style={[styles.emptyTitle, { color: theme.textStrong }]}>No journal history yet</Text>
             <Text style={[styles.emptyBody, { color: theme.muted }]}>
-              Add a journal note today to create a daily review.
+              Use this space to unload thoughts, reflect, or note how today felt.
             </Text>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Write a short journal note"
+              onPress={openJournalComposer}
+              style={[styles.emptyActionButton, { backgroundColor: theme.primary }]}
+            >
+              <Text style={styles.emptyActionText}>Write a short note</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.list}>
@@ -285,8 +339,10 @@ export default function JournalScreen() {
               const finishedCount = sourceTasks.filter((task) => task.done).length;
               const noteText = entry?.feelingNote?.trim();
               const moodLabel = getMoodLabel(entry?.mood);
+              const feelingScoreLabel = getFeelingScoreLabel(entry?.feelingScale?.score);
               const summary = entry?.summaries[0];
               const hasTasks = sourceTasks.length > 0;
+              const hasContext = hasDailyContext(entry?.dailyContext);
 
               return (
                 <Pressable
@@ -310,8 +366,10 @@ export default function JournalScreen() {
                     </Text>
                     <Text style={[styles.dateMeta, { color: theme.muted }]}>
                       {hasTasks ? `${finishedCount}/${sourceTasks.length} tasks finished` : 'Journal note'}
+                      {feelingScoreLabel ? ` · ${feelingScoreLabel}` : ''}
                       {moodLabel ? ` · ${moodLabel}` : ''}
                       {noteText ? ' · Note added' : ''}
+                      {hasContext ? ' · Context added' : ''}
                     </Text>
                     {summary && (
                       <Text style={[styles.summaryPreview, { color: theme.primaryStrong }]}>{summary.title}</Text>
@@ -347,37 +405,48 @@ export default function JournalScreen() {
                 <Ionicons name="close" size={20} color={theme.muted} />
               </Pressable>
             </View>
-            <Text style={[styles.modalBody, { color: theme.muted }]}>Add today&apos;s note.</Text>
-            <TextInput
-              value={journalNote}
-              onChangeText={setJournalNote}
-              placeholder="Write your note..."
-              placeholderTextColor={theme.subtle}
-              multiline
-              editable={!isSavingJournal}
-              style={[
-                styles.journalInput,
-                {
-                  backgroundColor: theme.softSurface,
-                  borderColor: theme.softBorder,
-                  color: theme.text,
-                },
-              ]}
-            />
-            <TouchableOpacity
-              style={[styles.modalPrimaryButton, { backgroundColor: theme.primary }]}
-              onPress={handleSaveJournal}
-              disabled={isSavingJournal}
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.composerScrollContent}
             >
-              {isSavingJournal ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="sparkles-outline" size={18} color="#FFFFFF" />
-                  <Text style={styles.modalPrimaryButtonText}>Save & Summarize</Text>
-                </>
-              )}
-            </TouchableOpacity>
+              <Text style={[styles.modalBody, { color: theme.muted }]}>
+                Write freely. No format required.
+              </Text>
+
+              <TextInput
+                value={journalNote}
+                onChangeText={setJournalNote}
+                accessibilityLabel="Journal note"
+                placeholder="Write anything you want to remember about today..."
+                placeholderTextColor={theme.subtle}
+                multiline
+                autoFocus
+                editable={!isSavingJournal}
+                style={[
+                  styles.journalInput,
+                  {
+                    backgroundColor: theme.softSurface,
+                    borderColor: theme.softBorder,
+                    color: theme.text,
+                  },
+                ]}
+              />
+              <TouchableOpacity
+                style={[styles.modalPrimaryButton, { backgroundColor: theme.primary }]}
+                onPress={handleSaveJournal}
+                disabled={isSavingJournal}
+              >
+                {isSavingJournal ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="sparkles-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.modalPrimaryButtonText}>Save & Summarize</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -458,7 +527,24 @@ export default function JournalScreen() {
                 {reviewMoodLabel && (
                   <Text style={[styles.moodLine, { color: theme.primaryStrong }]}>Mood: {reviewMoodLabel}</Text>
                 )}
+                {reviewFeelingScoreLabel ? (
+                  <Text style={[styles.moodLine, { color: theme.primaryStrong }]}>{reviewFeelingScoreLabel}</Text>
+                ) : null}
               </View>
+
+              {reviewDailyContextLabels.length > 0 && (
+                <View style={[styles.reviewSection, { borderColor: theme.softBorder }]}>
+                  <Text style={[styles.reviewSectionTitle, { color: theme.textStrong }]}>Daily context</Text>
+                  <View style={styles.contextReviewList}>
+                    {reviewDailyContextLabels.map((label) => (
+                      <View key={label} style={[styles.contextReviewPill, { backgroundColor: theme.softSurface }]}>
+                        <Ionicons name="analytics-outline" size={15} color={theme.primaryStrong} />
+                        <Text style={[styles.contextReviewText, { color: theme.muted }]}>{label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -551,6 +637,22 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '600',
   },
+  emptyActionButton: {
+    minHeight: 42,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  emptyActionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
   dateCard: {
     borderRadius: 18,
     borderWidth: 1,
@@ -597,6 +699,7 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalCard: {
+    maxHeight: '88%',
     borderRadius: 24,
     borderWidth: 1,
     padding: 18,
@@ -638,6 +741,58 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     marginTop: 12,
+  },
+  composerScrollContent: {
+    paddingBottom: 2,
+  },
+  promptSection: {
+    marginTop: 14,
+    gap: 8,
+  },
+  promptTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  promptChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  promptChip: {
+    minHeight: 38,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  promptChipPressed: {
+    opacity: 0.8,
+  },
+  promptChipText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  contextSection: {
+    marginTop: 14,
+    gap: 8,
+  },
+  contextChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  contextChip: {
+    minHeight: 40,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contextChipText: {
+    fontSize: 12,
+    fontWeight: '900',
   },
   journalInput: {
     minHeight: 150,
@@ -725,6 +880,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     marginTop: 8,
+  },
+  contextReviewList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  contextReviewPill: {
+    minHeight: 34,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  contextReviewText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   bottomTabWrap: {
     position: 'absolute',

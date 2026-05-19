@@ -1,10 +1,6 @@
-import Constants from 'expo-constants';
-
 import type { CompanionMessage } from '@/src/types/companion';
+import { type GeminiErrorCallback, requestGeminiWithFallback } from '@/src/services/gemini-client';
 import { buildWenwenPrompt } from '@/src/services/wenwen-persona';
-
-const GEMINI_MODEL = 'gemini-2.5-flash';
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 type CompanionSummaryResult = {
   title: string;
@@ -35,15 +31,45 @@ function normalizeSummary(raw: unknown): CompanionSummaryResult {
   return { title, body };
 }
 
-export async function generateCompanionSummary(input: {
+function trimText(value: string, maxLength = 120) {
+  const clean = value.trim().replace(/\s+/g, ' ');
+  if (clean.length <= maxLength) return clean;
+  return `${clean.slice(0, maxLength - 3).trim()}...`;
+}
+
+function createFallbackCompanionSummary(input: {
   dateKey: string;
   messages: CompanionMessage[];
-}): Promise<CompanionSummaryResult> {
-  const apiKey = Constants.manifest?.extra?.GEMINI_API_KEY ?? process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('Missing Gemini API key. Configure GEMINI_API_KEY in app.config.js extra or EXPO_PUBLIC_GEMINI_API_KEY.');
+}): CompanionSummaryResult {
+  const userMessages = input.messages.filter((message) => message.role === 'user');
+  const lastUserMessage = userMessages[userMessages.length - 1]?.text ?? '';
+
+  if (userMessages.length === 0) {
+    return {
+      title: 'Companion check-in',
+      body: 'This chat was opened, but there was not much to summarize yet. You can return anytime and use this space to sort one thought or choose one small next step.',
+    };
   }
 
+  return {
+    title: 'Conversation saved',
+    body: [
+      `You used Wenwen to sort through ${userMessages.length} message${userMessages.length === 1 ? '' : 's'}.`,
+      lastUserMessage ? `The latest note was: "${trimText(lastUserMessage)}".` : '',
+      'For the next step, keep it practical and choose one thing that can be handled in a few minutes.',
+    ]
+      .filter(Boolean)
+      .join(' '),
+  };
+}
+
+export async function generateCompanionSummary(
+  input: {
+    dateKey: string;
+    messages: CompanionMessage[];
+  },
+  options?: { onError?: GeminiErrorCallback }
+): Promise<CompanionSummaryResult> {
   const conversation = input.messages
     .map((message) => `${message.role === 'user' ? 'User' : 'Wenwen'}: ${message.text}`)
     .join('\n');
@@ -65,36 +91,14 @@ export async function generateCompanionSummary(input: {
     '{ "title": "A clear title", "body": "One short paragraph, 3-5 sentences." }',
   ]);
 
-  const response = await fetch(GEMINI_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey,
+  return requestGeminiWithFallback({
+    prompt,
+    fallback: createFallbackCompanionSummary(input),
+    onError: options?.onError,
+    generationConfig: {
+      temperature: 0.65,
+      responseMimeType: 'application/json',
     },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: prompt }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.65,
-        responseMimeType: 'application/json',
-      },
-    }),
+    parse: (rawText) => normalizeSummary(JSON.parse(extractJsonObject(rawText))),
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini request failed (${response.status}): ${errorText}`);
-  }
-
-  const payload = await response.json();
-  const rawText =
-    payload?.candidates?.[0]?.content?.parts
-      ?.map((part: { text?: string }) => part?.text ?? '')
-      .join('') ?? '';
-
-  return normalizeSummary(JSON.parse(extractJsonObject(rawText)));
 }

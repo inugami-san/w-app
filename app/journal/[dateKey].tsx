@@ -18,7 +18,7 @@ import { generateJournalSummary } from '@/src/services/gemini-journal-summary';
 import { scheduleJournalSummaryNotification } from '@/src/services/journal-notifications';
 import { useJournalStore } from '@/src/store/journal-store';
 import { useAppTheme } from '@/src/theme/app-theme';
-import type { JournalSummary, JournalTaskSnapshot } from '@/src/types/journal';
+import type { JournalDailyContext, JournalSummary, JournalTaskSnapshot } from '@/src/types/journal';
 import { getLocalDateKey } from '@/src/utils/date';
 
 function getParam(value: string | string[] | undefined, fallback: string): string {
@@ -33,6 +33,28 @@ function formatDateLabel(dateKey: string) {
     day: 'numeric',
     year: 'numeric',
   });
+}
+
+function getSleepContextLabel(sleep: JournalDailyContext['sleep']) {
+  if (sleep === 'low') return 'Low sleep';
+  if (sleep === 'okay') return 'Okay sleep';
+  if (sleep === 'rested') return 'Rested';
+  return '';
+}
+
+function getDailyContextLabels(context: JournalDailyContext | undefined) {
+  const labels: string[] = [];
+
+  const sleepLabel = getSleepContextLabel(context?.sleep);
+  if (sleepLabel) labels.push(`Sleep: ${sleepLabel}`);
+  if (context?.outside) labels.push('Went outside');
+  if (context?.movement) labels.push('Moved body');
+
+  return labels;
+}
+
+function getFeelingScoreLabel(score: number | null | undefined) {
+  return typeof score === 'number' ? `Feeling ${score}/10` : '';
 }
 
 export default function JournalDateScreen() {
@@ -50,6 +72,8 @@ export default function JournalDateScreen() {
     entry?.summaries.find((summary) => summary.id === initialSummaryId) ?? entry?.summaries[0] ?? null
   );
   const moodLabel = getMoodLabel(entry?.mood);
+  const dailyContextLabels = getDailyContextLabels(entry?.dailyContext);
+  const feelingScoreLabel = getFeelingScoreLabel(entry?.feelingScale?.score);
 
   const taskSnapshot: JournalTaskSnapshot[] = useMemo(() => {
     if (dateKey === today) return [];
@@ -95,6 +119,8 @@ export default function JournalDateScreen() {
         dateKey,
         tasks: taskSnapshot,
         feelingNote: note.trim(),
+        dailyContext: entry?.dailyContext,
+        feelingScore: entry?.feelingScale?.score,
         mood: entry?.mood,
       });
       const summary = addSummary({
@@ -103,6 +129,8 @@ export default function JournalDateScreen() {
         body: result.body,
         tasks: taskSnapshot,
         feelingNote: note.trim(),
+        dailyContext: entry?.dailyContext,
+        feelingScore: entry?.feelingScale?.score,
         mood: entry?.mood,
       });
       setActiveSummary(summary);
@@ -132,7 +160,9 @@ export default function JournalDateScreen() {
         <Text style={[styles.heroTitle, { color: theme.text }]}>{formatDateLabel(dateKey)}</Text>
         <Text style={[styles.heroSubtitle, { color: theme.muted }]}>
           {taskSnapshot.length > 0 ? `${completedCount}/${taskSnapshot.length} tasks finished` : 'Journal note'}
+          {feelingScoreLabel ? ` · ${feelingScoreLabel}` : ''}
           {moodLabel ? ` · ${moodLabel}` : ''}
+          {dailyContextLabels.length > 0 ? ' · Context added' : ''}
         </Text>
 
         {activeSummary && (
@@ -170,6 +200,30 @@ export default function JournalDateScreen() {
           </View>
         </View>
 
+        {dailyContextLabels.length > 0 && (
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
+            <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Daily context</Text>
+            <View style={styles.contextList}>
+              {dailyContextLabels.map((label) => (
+                <View key={label} style={[styles.contextPill, { backgroundColor: theme.softSurface }]}>
+                  <Ionicons name="analytics-outline" size={15} color={theme.primaryStrong} />
+                  <Text style={[styles.contextText, { color: theme.muted }]}>{label}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {feelingScoreLabel ? (
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
+            <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Feeling check-in</Text>
+            <View style={[styles.scorePill, { backgroundColor: theme.primarySoft }]}>
+              <Ionicons name="heart-outline" size={16} color={theme.primaryStrong} />
+              <Text style={[styles.scoreText, { color: theme.primaryStrong }]}>{feelingScoreLabel}</Text>
+            </View>
+          </View>
+        ) : null}
+
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
           <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Daily note</Text>
           <TextInput
@@ -194,7 +248,13 @@ export default function JournalDateScreen() {
             <TouchableOpacity
               style={[styles.primaryButton, { backgroundColor: theme.primary }]}
               onPress={handleGenerateSummary}
-              disabled={isSummarizing || (taskSnapshot.length === 0 && note.trim().length === 0)}
+              disabled={
+                isSummarizing ||
+                (taskSnapshot.length === 0 &&
+                  note.trim().length === 0 &&
+                  dailyContextLabels.length === 0 &&
+                  !feelingScoreLabel)
+              }
             >
               <Ionicons name="sparkles-outline" size={16} color="#FFFFFF" />
               <Text style={styles.primaryButtonText}>
@@ -309,6 +369,38 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  contextList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  contextPill: {
+    minHeight: 34,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  contextText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  scorePill: {
+    minHeight: 36,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    gap: 7,
+    marginTop: 10,
+  },
+  scoreText: {
+    fontSize: 13,
+    fontWeight: '900',
   },
   noteInput: {
     minHeight: 130,

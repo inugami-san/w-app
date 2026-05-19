@@ -20,6 +20,12 @@ import { router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { WenwenProps } from '@/components/WenwenBase';
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
+import {
+  DEFAULT_AVATAR_COLORS,
+  DEFAULT_AVATAR_PERSONA,
+  type AvatarPersona,
+  usePreferencesStore,
+} from '@/src/store/preferences-store';
 import { useAppTheme } from '@/src/theme/app-theme';
 
 // ─── Color presets  ──────────────────────────────────────────────────────────
@@ -53,6 +59,23 @@ const BODY_COLORS = [
   { label: 'Blush',  color: '#F0C8D4' },
   { label: 'Cream',  color: '#F5EACC' },
   { label: 'Slate',  color: '#4B5563' },
+];
+
+const PERSONA_OPTIONS: {
+  key: AvatarPersona;
+  title: string;
+  description: string;
+}[] = [
+  {
+    key: 'bot',
+    title: 'Bot Wenwen',
+    description: 'Warm and steady',
+  },
+  {
+    key: 'cat',
+    title: 'Cat',
+    description: 'Blunt and direct',
+  },
 ];
 
 // ─── Sub-component: a labeled row of color swatches ─────────────────────────
@@ -97,7 +120,7 @@ const row = StyleSheet.create({
     marginVertical: 5,
   },
   label: {
-    width: 40,
+    width: 48,
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.4,
@@ -136,49 +159,82 @@ const row = StyleSheet.create({
 
 export default function HomeScreen() {
   const theme = useAppTheme();
-  const [WenwenComponent, setWenwenComponent] =
-    useState<ComponentType<WenwenProps> | null>(null);
+  const storedAvatarColors = usePreferencesStore((state) => state.avatarColors);
+  const storedAvatarPersona = usePreferencesStore((state) => state.avatarPersona);
+  const hasHydratedPreferences = usePreferencesStore((state) => state.hasHydrated);
+  const setAvatarColors = usePreferencesStore((state) => state.setAvatarColors);
+  const setAvatarPersona = usePreferencesStore((state) => state.setAvatarPersona);
+  const [avatarComponents, setAvatarComponents] =
+    useState<Record<AvatarPersona, ComponentType<WenwenProps>> | null>(null);
   const { height } = useWindowDimensions();
 
   // Color state — image-accurate defaults
-  const [eyeColor,  setEyeColor]  = useState('#00D4C2');
-  const [faceColor, setFaceColor] = useState('#E2E8F0');
-  const [bodyColor, setBodyColor] = useState('#F0F2F5');
+  const [eyeColor,  setEyeColor]  = useState(storedAvatarColors?.eyeColor ?? DEFAULT_AVATAR_COLORS.eyeColor);
+  const [faceColor, setFaceColor] = useState(storedAvatarColors?.faceColor ?? DEFAULT_AVATAR_COLORS.faceColor);
+  const [bodyColor, setBodyColor] = useState(storedAvatarColors?.bodyColor ?? DEFAULT_AVATAR_COLORS.bodyColor);
+  const [persona, setPersona] = useState<AvatarPersona>(storedAvatarPersona ?? DEFAULT_AVATAR_PERSONA);
 
   useEffect(() => {
-    if (Platform.OS === 'web') {
-      import('@shopify/react-native-skia/lib/commonjs/web/LoadSkiaWeb')
-        .then(({ LoadSkiaWeb }) =>
-          (LoadSkiaWeb as Function)({
-            locateFile: (file: string) =>
-              `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.40.0/bin/full/${file}`,
-          })
-        )
-        .then(() => import('@/components/WenwenBase'))
-        .then((mod) =>
-          setWenwenComponent(
-            () => mod.WenwenBase as ComponentType<WenwenProps>
-          )
-        )
-        .catch(console.error);
-    } else {
-      import('@/components/WenwenBase').then((mod) =>
-        setWenwenComponent(() => mod.WenwenBase as ComponentType<WenwenProps>)
-      );
-    }
+    const load = async () => {
+      if (Platform.OS === 'web') {
+        const { LoadSkiaWeb } = await import('@shopify/react-native-skia/lib/commonjs/web/LoadSkiaWeb');
+        await (LoadSkiaWeb as Function)({
+          locateFile: (file: string) =>
+            `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.40.0/bin/full/${file}`,
+        });
+      }
+
+      const [botMod, catMod] = await Promise.all([
+        import('@/components/WenwenBase'),
+        import('@/components/CatBase'),
+      ]);
+      setAvatarComponents({
+        bot: botMod.WenwenBase as ComponentType<WenwenProps>,
+        cat: catMod.CatBase as ComponentType<WenwenProps>,
+      });
+    };
+
+    load().catch(console.error);
   }, []);
 
-  const canvasHeight = Math.max(260, Math.min(360, height * 0.34));
+  useEffect(() => {
+    if (!hasHydratedPreferences) return;
+
+    setEyeColor(storedAvatarColors.eyeColor);
+    setFaceColor(storedAvatarColors.faceColor);
+    setBodyColor(storedAvatarColors.bodyColor);
+    setPersona(storedAvatarPersona ?? DEFAULT_AVATAR_PERSONA);
+  }, [
+    hasHydratedPreferences,
+    storedAvatarColors.bodyColor,
+    storedAvatarColors.eyeColor,
+    storedAvatarColors.faceColor,
+    storedAvatarPersona,
+  ]);
+
+  const canvasHeight = Math.max(210, Math.min(260, height * 0.28));
+  const AvatarComponent = avatarComponents?.[persona] ?? null;
+
+  const saveAvatar = () => {
+    setAvatarColors({ eyeColor, faceColor, bodyColor });
+    setAvatarPersona(persona);
+  };
+
+  const saveAndOpenDashboard = () => {
+    saveAvatar();
+    router.push({
+      pathname: '/dashboard',
+      params: { eyeColor, faceColor, bodyColor, persona },
+    });
+  };
 
   const handleTabPress = (tab: DashboardTabKey) => {
     if (tab === 'customize') return;
     if (tab === 'home') {
-      router.push({
-        pathname: '/dashboard',
-        params: { eyeColor, faceColor, bodyColor },
-      });
+      saveAndOpenDashboard();
       return;
     }
+    saveAvatar();
     if (tab === 'journal') {
       router.push('/journal');
       return;
@@ -204,17 +260,18 @@ export default function HomeScreen() {
       >
         <View style={styles.topHeader}>
           <Text style={[styles.topTitle, { color: theme.text }]}>Customize Wenwen</Text>
-          <Text style={[styles.topSubtitle, { color: theme.muted }]}>Choose Wenwen&apos;s colors.</Text>
+          <Text style={[styles.topSubtitle, { color: theme.muted }]}>Choose a persona and colors.</Text>
         </View>
 
         {/* ── Character canvas ── */}
         <View style={[styles.canvasArea, { height: canvasHeight }]}>
           <View style={styles.characterWrap}>
-            {WenwenComponent && (
-              <WenwenComponent
+            {AvatarComponent && (
+              <AvatarComponent
                 eyeColor={eyeColor}
                 faceColor={faceColor}
                 bodyColor={bodyColor}
+                presentation="peek"
               />
             )}
           </View>
@@ -222,16 +279,41 @@ export default function HomeScreen() {
 
         {/* ── Color picker panel ── */}
         <View style={[styles.panel, { backgroundColor: theme.softSurface, borderTopColor: theme.border }]}>
+          <View style={styles.personaSection}>
+            <Text style={[styles.panelTitle, { color: theme.textStrong }]}>Persona</Text>
+            <View style={styles.personaOptions}>
+              {PERSONA_OPTIONS.map((option) => {
+                const isSelected = persona === option.key;
+                return (
+                  <TouchableOpacity
+                    key={option.key}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={`Select ${option.title} persona`}
+                    onPress={() => setPersona(option.key)}
+                    style={[
+                      styles.personaOption,
+                      {
+                        backgroundColor: isSelected ? theme.primarySoft : theme.surface,
+                        borderColor: isSelected ? theme.primary : theme.softBorder,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.personaTitle, { color: isSelected ? theme.primaryStrong : theme.textStrong }]}>
+                      {option.title}
+                    </Text>
+                    <Text style={[styles.personaDescription, { color: theme.muted }]}>{option.description}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
           <View style={styles.panelHeader}>
             <Text style={[styles.panelTitle, { color: theme.textStrong }]}>Color palette</Text>
             <TouchableOpacity
               style={[styles.submitButton, { backgroundColor: theme.primary }]}
-              onPress={() =>
-                router.push({
-                  pathname: '/dashboard',
-                  params: { eyeColor, faceColor, bodyColor },
-                })
-              }>
+              onPress={saveAndOpenDashboard}>
               <Text style={styles.submitText}>Continue</Text>
             </TouchableOpacity>
           </View>
@@ -296,10 +378,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingBottom: 10,
+    overflow: 'hidden',
   },
   characterWrap: {
     width: '100%',
-    maxWidth: 460,
+    maxWidth: 420,
     height: '100%',
   },
   panel: {
@@ -307,6 +390,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 14,
     paddingBottom: 28,
+  },
+  personaSection: {
+    marginBottom: 14,
+  },
+  personaOptions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  personaOption: {
+    flex: 1,
+    minHeight: 64,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    justifyContent: 'center',
+  },
+  personaTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  personaDescription: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 3,
   },
   panelHeader: {
     flexDirection: 'row',

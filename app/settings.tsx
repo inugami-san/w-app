@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
 import { REMINDER_TIME_OPTIONS, syncGentleReminder } from '@/src/services/gentle-reminders';
+import { NIGHTLY_REVIEW_TIME, syncNightlyReviewNotification } from '@/src/services/nightly-review-notifications';
 import { useJournalStore } from '@/src/store/journal-store';
 import { type AppThemeMode, type ReminderTimeKey, usePreferencesStore } from '@/src/store/preferences-store';
 import { useAppTheme } from '@/src/theme/app-theme';
@@ -18,17 +19,17 @@ const FREQUENCY_OPTIONS: {
   {
     value: 'daily',
     title: 'Daily',
-    detail: 'Review each day from tasks and journal notes.',
+    detail: 'Reviews yesterday. On Mondays, reviews the previous week.',
   },
   {
     value: 'every3days',
     title: 'Every 3 days',
-    detail: 'More context between summaries.',
+    detail: 'Reviews the latest completed 3-day period.',
   },
   {
     value: 'weekly',
     title: 'Weekly',
-    detail: 'A broader review across the week.',
+    detail: 'Reviews the latest completed week.',
   },
 ];
 
@@ -54,6 +55,7 @@ const THEME_OPTIONS: {
 
 export default function SettingsScreen() {
   const [isReminderBusy, setIsReminderBusy] = useState(false);
+  const [isNightlyReviewBusy, setIsNightlyReviewBusy] = useState(false);
   const frequency = useJournalStore((state) => state.evaluationFrequency);
   const setFrequency = useJournalStore((state) => state.setEvaluationFrequency);
   const themeMode = usePreferencesStore((state) => state.themeMode);
@@ -63,6 +65,8 @@ export default function SettingsScreen() {
   const remindersEnabled = usePreferencesStore((state) => state.remindersEnabled);
   const reminderTime = usePreferencesStore((state) => state.reminderTime);
   const reminderNotificationId = usePreferencesStore((state) => state.reminderNotificationId);
+  const nightlyReviewEnabled = usePreferencesStore((state) => state.nightlyReviewEnabled);
+  const nightlyReviewNotificationId = usePreferencesStore((state) => state.nightlyReviewNotificationId);
   const setReminderSettings = usePreferencesStore((state) => state.setReminderSettings);
   const theme = useAppTheme();
 
@@ -118,6 +122,37 @@ export default function SettingsScreen() {
       Alert.alert('Reminder update failed', message);
     } finally {
       setIsReminderBusy(false);
+    }
+  };
+
+  const handleUpdateNightlyReview = async (enabled: boolean) => {
+    if (isNightlyReviewBusy) return;
+
+    setIsNightlyReviewBusy(true);
+    try {
+      const notificationId = await syncNightlyReviewNotification({
+        enabled,
+        existingNotificationId: nightlyReviewNotificationId,
+      });
+
+      if (enabled && !notificationId) {
+        Alert.alert('Nightly review not enabled', 'Notifications are not available or permission was not granted.');
+        setReminderSettings({
+          nightlyReviewEnabled: false,
+          nightlyReviewNotificationId: null,
+        });
+        return;
+      }
+
+      setReminderSettings({
+        nightlyReviewEnabled: enabled,
+        nightlyReviewNotificationId: notificationId,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update the nightly review right now.';
+      Alert.alert('Nightly review update failed', message);
+    } finally {
+      setIsNightlyReviewBusy(false);
     }
   };
 
@@ -215,7 +250,7 @@ export default function SettingsScreen() {
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Evaluation frequency</Text>
           <Text style={[styles.cardCaption, { color: theme.muted }]}>
-            This controls when the app summarizes finished tasks, unfinished tasks, and journal notes.
+            This controls when the app summarizes tasks, journal notes, and companion chats.
           </Text>
 
           <View style={styles.optionList}>
@@ -331,6 +366,49 @@ export default function SettingsScreen() {
                 </Pressable>
               );
             })}
+          </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.optionTextWrap}>
+              <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Nightly review</Text>
+              <Text style={[styles.cardCaption, { color: theme.muted }]}>
+                At 9:30 PM, Wenwen summarizes tasks, journal notes, and companion chat activity with a short encouraging note.
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: nightlyReviewEnabled, disabled: isNightlyReviewBusy }}
+              accessibilityLabel="Enable nightly review"
+              disabled={isNightlyReviewBusy}
+              onPress={() => handleUpdateNightlyReview(!nightlyReviewEnabled)}
+              style={[
+                styles.switchTrack,
+                {
+                  backgroundColor: nightlyReviewEnabled ? theme.primary : theme.softSurface,
+                  borderColor: nightlyReviewEnabled ? theme.primary : theme.softBorder,
+                },
+                isNightlyReviewBusy && styles.optionDisabled,
+              ]}
+            >
+              <View
+                style={[
+                  styles.switchThumb,
+                  {
+                    backgroundColor: nightlyReviewEnabled ? '#FFFFFF' : theme.subtle,
+                    transform: [{ translateX: nightlyReviewEnabled ? 18 : 0 }],
+                  },
+                ]}
+              />
+            </Pressable>
+          </View>
+
+          <View style={[styles.fixedTimeRow, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}>
+            <Ionicons name="moon-outline" size={16} color={theme.primaryStrong} />
+            <Text style={[styles.fixedTimeText, { color: theme.muted }]}>
+              {NIGHTLY_REVIEW_TIME.hour - 12}:{String(NIGHTLY_REVIEW_TIME.minute).padStart(2, '0')} PM every night
+            </Text>
           </View>
         </View>
 
@@ -483,6 +561,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     marginTop: 4,
+  },
+  fixedTimeRow: {
+    minHeight: 42,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 14,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  fixedTimeText: {
+    fontSize: 12,
+    fontWeight: '800',
   },
   dataRow: {
     flexDirection: 'row',
