@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, StyleSheet, View } from 'react-native';
+import { Dimensions, type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import {
   BlurMask,
   Canvas,
@@ -62,9 +62,9 @@ function mixHexColor(color: string, target: string, amount: number) {
 }
 
 export const CatBase: React.FC<WenwenProps> = ({
-  eyeColor = '#00D4C2',
-  faceColor = '#E2E8F0',
-  bodyColor = '#F0F2F5',
+  eyeColor = '#58CFC6',
+  faceColor = '#E9EFEA',
+  bodyColor = '#F7F3EC',
   presentation = 'full',
 }) => {
   const [size, setSize] = useState(() => {
@@ -72,8 +72,8 @@ export const CatBase: React.FC<WenwenProps> = ({
     return { w: width, h: height * 0.7 };
   });
 
-  const onLayout = (e: any) => {
-    const { width, height } = e.nativeEvent.layout;
+  const onLayout = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
     if (width > 0 && height > 0) {
       setSize({ w: width, h: height });
     }
@@ -85,34 +85,34 @@ export const CatBase: React.FC<WenwenProps> = ({
   const isShowcase = presentation === 'showcase';
 
   const CW = Math.min(
-    SW * (isPeek ? 0.78 : isShowcase ? 0.78 : 0.72),
-    SH * (isPeek ? 1.46 : isShowcase ? 0.86 : 0.78),
-    isShowcase ? 340 : 310
+    SW * (isPeek ? 0.7 : isShowcase ? 0.76 : 0.68),
+    SH * (isPeek ? 1.34 : isShowcase ? 0.82 : 0.72),
+    isShowcase ? 330 : 300
   );
   const CX = SW / 2;
-  const CY = SH * (isPeek ? 0.78 : isShowcase ? 0.58 : 0.54);
+  const CY = SH * (isPeek ? 0.79 : isShowcase ? 0.58 : 0.54);
 
-  const HEAD_W = CW * 0.74;
-  const HEAD_H = CW * 0.66;
+  const HEAD_W = CW * 0.7;
+  const HEAD_H = CW * 0.64;
   const HEAD_X = CX - HEAD_W / 2;
-  const HEAD_Y = CY - CW * 0.5;
+  const HEAD_Y = CY - CW * 0.44;
 
-  const BODY_W = CW * 0.62;
-  const BODY_H = CW * 0.58;
+  const BODY_W = CW * 0.54;
+  const BODY_H = CW * 0.4;
   const BODY_X = CX - BODY_W / 2;
-  const BODY_Y = CY + CW * 0.05;
+  const BODY_Y = CY + CW * 0.1;
 
-  const EYE_W = CW * 0.18;
+  const EYE_W = CW * 0.17;
   const EYE_H = CW * 0.19;
-  const PUPIL_W = CW * 0.058;
-  const PUPIL_H = CW * 0.095;
-  const EYE_Y = HEAD_Y + HEAD_H * 0.44;
-  const L_EYE_X = CX - HEAD_W * 0.18;
-  const R_EYE_X = CX + HEAD_W * 0.18;
-  const MUZZLE_W = HEAD_W * 0.38;
-  const MUZZLE_H = HEAD_H * 0.24;
+  const PUPIL_W = CW * 0.06;
+  const PUPIL_H = CW * 0.1;
+  const EYE_Y = HEAD_Y + HEAD_H * 0.43;
+  const L_EYE_X = CX - HEAD_W * 0.17;
+  const R_EYE_X = CX + HEAD_W * 0.17;
+  const MUZZLE_W = HEAD_W * 0.42;
+  const MUZZLE_H = HEAD_H * 0.22;
   const MUZZLE_Y = HEAD_Y + HEAD_H * 0.58;
-  const NOSE_Y = MUZZLE_Y + MUZZLE_H * 0.15;
+  const NOSE_Y = MUZZLE_Y + MUZZLE_H * 0.16;
 
   const tailWag = useSharedValue(0);
   const breatheY = useSharedValue(0);
@@ -121,6 +121,7 @@ export const CatBase: React.FC<WenwenProps> = ({
   const earTwitch = useSharedValue(0);
   const greetingLift = useSharedValue(0);
   const tapTilt = useSharedValue(0);
+  const blinkScale = useSharedValue(1);
 
   const highlight = useMemo(() => mixHexColor(bodyColor, '#FFFFFF', 0.52), [bodyColor]);
   const softHighlight = useMemo(() => mixHexColor(bodyColor, '#FFFFFF', 0.28), [bodyColor]);
@@ -132,22 +133,22 @@ export const CatBase: React.FC<WenwenProps> = ({
 
   const leftEarPath = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(HEAD_X + HEAD_W * 0.05, HEAD_Y + HEAD_H * 0.34);
+    p.moveTo(HEAD_X + HEAD_W * 0.1, HEAD_Y + HEAD_H * 0.28);
     p.cubicTo(
-      HEAD_X + HEAD_W * 0.11,
-      HEAD_Y - HEAD_H * 0.08,
-      HEAD_X + HEAD_W * 0.25,
-      HEAD_Y - HEAD_H * 0.42,
-      HEAD_X + HEAD_W * 0.39,
-      HEAD_Y - HEAD_H * 0.06
+      HEAD_X + HEAD_W * 0.14,
+      HEAD_Y - HEAD_H * 0.06,
+      HEAD_X + HEAD_W * 0.27,
+      HEAD_Y - HEAD_H * 0.36,
+      HEAD_X + HEAD_W * 0.4,
+      HEAD_Y - HEAD_H * 0.02
     );
     p.cubicTo(
       HEAD_X + HEAD_W * 0.43,
-      HEAD_Y + HEAD_H * 0.17,
-      HEAD_X + HEAD_W * 0.27,
-      HEAD_Y + HEAD_H * 0.28,
-      HEAD_X + HEAD_W * 0.05,
-      HEAD_Y + HEAD_H * 0.34
+      HEAD_Y + HEAD_H * 0.15,
+      HEAD_X + HEAD_W * 0.28,
+      HEAD_Y + HEAD_H * 0.23,
+      HEAD_X + HEAD_W * 0.1,
+      HEAD_Y + HEAD_H * 0.28
     );
     p.close();
     return p;
@@ -155,22 +156,22 @@ export const CatBase: React.FC<WenwenProps> = ({
 
   const rightEarPath = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(HEAD_X + HEAD_W * 0.61, HEAD_Y - HEAD_H * 0.06);
-    p.cubicTo(
-      HEAD_X + HEAD_W * 0.75,
-      HEAD_Y - HEAD_H * 0.42,
-      HEAD_X + HEAD_W * 0.89,
-      HEAD_Y - HEAD_H * 0.08,
-      HEAD_X + HEAD_W * 0.95,
-      HEAD_Y + HEAD_H * 0.34
-    );
+    p.moveTo(HEAD_X + HEAD_W * 0.6, HEAD_Y - HEAD_H * 0.02);
     p.cubicTo(
       HEAD_X + HEAD_W * 0.73,
-      HEAD_Y + HEAD_H * 0.28,
+      HEAD_Y - HEAD_H * 0.36,
+      HEAD_X + HEAD_W * 0.86,
+      HEAD_Y - HEAD_H * 0.06,
+      HEAD_X + HEAD_W * 0.9,
+      HEAD_Y + HEAD_H * 0.28
+    );
+    p.cubicTo(
+      HEAD_X + HEAD_W * 0.72,
+      HEAD_Y + HEAD_H * 0.23,
       HEAD_X + HEAD_W * 0.57,
-      HEAD_Y + HEAD_H * 0.17,
-      HEAD_X + HEAD_W * 0.61,
-      HEAD_Y - HEAD_H * 0.06
+      HEAD_Y + HEAD_H * 0.15,
+      HEAD_X + HEAD_W * 0.6,
+      HEAD_Y - HEAD_H * 0.02
     );
     p.close();
     return p;
@@ -178,14 +179,14 @@ export const CatBase: React.FC<WenwenProps> = ({
 
   const leftInnerEarPath = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(HEAD_X + HEAD_W * 0.17, HEAD_Y + HEAD_H * 0.18);
+    p.moveTo(HEAD_X + HEAD_W * 0.19, HEAD_Y + HEAD_H * 0.13);
     p.cubicTo(
-      HEAD_X + HEAD_W * 0.24,
-      HEAD_Y - HEAD_H * 0.12,
-      HEAD_X + HEAD_W * 0.3,
-      HEAD_Y - HEAD_H * 0.2,
+      HEAD_X + HEAD_W * 0.25,
+      HEAD_Y - HEAD_H * 0.11,
+      HEAD_X + HEAD_W * 0.31,
+      HEAD_Y - HEAD_H * 0.17,
       HEAD_X + HEAD_W * 0.36,
-      HEAD_Y + HEAD_H * 0.11
+      HEAD_Y + HEAD_H * 0.09
     );
     p.cubicTo(
       HEAD_X + HEAD_W * 0.3,
@@ -201,14 +202,14 @@ export const CatBase: React.FC<WenwenProps> = ({
 
   const rightInnerEarPath = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(HEAD_X + HEAD_W * 0.64, HEAD_Y + HEAD_H * 0.11);
+    p.moveTo(HEAD_X + HEAD_W * 0.64, HEAD_Y + HEAD_H * 0.09);
     p.cubicTo(
-      HEAD_X + HEAD_W * 0.7,
-      HEAD_Y - HEAD_H * 0.2,
-      HEAD_X + HEAD_W * 0.76,
-      HEAD_Y - HEAD_H * 0.12,
-      HEAD_X + HEAD_W * 0.83,
-      HEAD_Y + HEAD_H * 0.18
+      HEAD_X + HEAD_W * 0.69,
+      HEAD_Y - HEAD_H * 0.17,
+      HEAD_X + HEAD_W * 0.75,
+      HEAD_Y - HEAD_H * 0.11,
+      HEAD_X + HEAD_W * 0.81,
+      HEAD_Y + HEAD_H * 0.13
     );
     p.cubicTo(
       HEAD_X + HEAD_W * 0.76,
@@ -225,67 +226,81 @@ export const CatBase: React.FC<WenwenProps> = ({
   const tailPath = useMemo(() => {
     const p = Skia.Path.Make();
     p.moveTo(0, 0);
-    p.cubicTo(CW * 0.2, -CW * 0.17, CW * 0.4, -CW * 0.02, CW * 0.26, CW * 0.16);
+    p.cubicTo(CW * 0.18, -CW * 0.2, CW * 0.44, -CW * 0.1, CW * 0.36, CW * 0.13);
     return p;
   }, [CW]);
 
   const mouthPath = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(CX - CW * 0.06, NOSE_Y + CW * 0.055);
-    p.lineTo(CX + CW * 0.06, NOSE_Y + CW * 0.055);
+    p.moveTo(CX - CW * 0.045, NOSE_Y + CW * 0.05);
+    p.quadTo(CX, NOSE_Y + CW * 0.08, CX + CW * 0.045, NOSE_Y + CW * 0.05);
     return p;
   }, [CW, CX, NOSE_Y]);
 
   const leftWhiskerTop = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(CX - MUZZLE_W * 0.18, NOSE_Y + CW * 0.005);
-    p.lineTo(CX - HEAD_W * 0.4, NOSE_Y - CW * 0.055);
+    p.moveTo(CX - MUZZLE_W * 0.44, NOSE_Y + CW * 0.006);
+    p.quadTo(CX - HEAD_W * 0.28, NOSE_Y - CW * 0.04, CX - HEAD_W * 0.43, NOSE_Y - CW * 0.058);
     return p;
   }, [CW, CX, HEAD_W, MUZZLE_W, NOSE_Y]);
 
   const leftWhiskerMiddle = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(CX - MUZZLE_W * 0.18, NOSE_Y + CW * 0.04);
-    p.lineTo(CX - HEAD_W * 0.42, NOSE_Y + CW * 0.03);
+    p.moveTo(CX - MUZZLE_W * 0.48, NOSE_Y + CW * 0.044);
+    p.quadTo(CX - HEAD_W * 0.3, NOSE_Y + CW * 0.03, CX - HEAD_W * 0.45, NOSE_Y + CW * 0.034);
     return p;
   }, [CW, CX, HEAD_W, MUZZLE_W, NOSE_Y]);
 
   const leftWhiskerBottom = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(CX - MUZZLE_W * 0.18, NOSE_Y + CW * 0.075);
-    p.lineTo(CX - HEAD_W * 0.39, NOSE_Y + CW * 0.125);
+    p.moveTo(CX - MUZZLE_W * 0.42, NOSE_Y + CW * 0.078);
+    p.quadTo(CX - HEAD_W * 0.28, NOSE_Y + CW * 0.105, CX - HEAD_W * 0.42, NOSE_Y + CW * 0.145);
     return p;
   }, [CW, CX, HEAD_W, MUZZLE_W, NOSE_Y]);
 
   const rightWhiskerTop = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(CX + MUZZLE_W * 0.18, NOSE_Y + CW * 0.005);
-    p.lineTo(CX + HEAD_W * 0.4, NOSE_Y - CW * 0.055);
+    p.moveTo(CX + MUZZLE_W * 0.44, NOSE_Y + CW * 0.006);
+    p.quadTo(CX + HEAD_W * 0.28, NOSE_Y - CW * 0.04, CX + HEAD_W * 0.43, NOSE_Y - CW * 0.058);
     return p;
   }, [CW, CX, HEAD_W, MUZZLE_W, NOSE_Y]);
 
   const rightWhiskerMiddle = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(CX + MUZZLE_W * 0.18, NOSE_Y + CW * 0.04);
-    p.lineTo(CX + HEAD_W * 0.42, NOSE_Y + CW * 0.03);
+    p.moveTo(CX + MUZZLE_W * 0.48, NOSE_Y + CW * 0.044);
+    p.quadTo(CX + HEAD_W * 0.3, NOSE_Y + CW * 0.03, CX + HEAD_W * 0.45, NOSE_Y + CW * 0.034);
     return p;
   }, [CW, CX, HEAD_W, MUZZLE_W, NOSE_Y]);
 
   const rightWhiskerBottom = useMemo(() => {
     const p = Skia.Path.Make();
-    p.moveTo(CX + MUZZLE_W * 0.18, NOSE_Y + CW * 0.075);
-    p.lineTo(CX + HEAD_W * 0.39, NOSE_Y + CW * 0.125);
+    p.moveTo(CX + MUZZLE_W * 0.42, NOSE_Y + CW * 0.078);
+    p.quadTo(CX + HEAD_W * 0.28, NOSE_Y + CW * 0.105, CX + HEAD_W * 0.42, NOSE_Y + CW * 0.145);
     return p;
   }, [CW, CX, HEAD_W, MUZZLE_W, NOSE_Y]);
 
   const nosePath = useMemo(() => {
     const p = Skia.Path.Make();
     p.moveTo(CX, NOSE_Y);
-    p.lineTo(CX - CW * 0.028, NOSE_Y + CW * 0.036);
-    p.lineTo(CX + CW * 0.028, NOSE_Y + CW * 0.036);
+    p.lineTo(CX - CW * 0.024, NOSE_Y + CW * 0.032);
+    p.lineTo(CX + CW * 0.024, NOSE_Y + CW * 0.032);
     p.close();
     return p;
   }, [CW, CX, NOSE_Y]);
+
+  const leftClosedEyePath = useMemo(() => {
+    const p = Skia.Path.Make();
+    p.moveTo(L_EYE_X - EYE_W * 0.34, EYE_Y);
+    p.quadTo(L_EYE_X, EYE_Y + EYE_H * 0.13, L_EYE_X + EYE_W * 0.34, EYE_Y);
+    return p;
+  }, [EYE_H, EYE_W, EYE_Y, L_EYE_X]);
+
+  const rightClosedEyePath = useMemo(() => {
+    const p = Skia.Path.Make();
+    p.moveTo(R_EYE_X - EYE_W * 0.34, EYE_Y);
+    p.quadTo(R_EYE_X, EYE_Y + EYE_H * 0.13, R_EYE_X + EYE_W * 0.34, EYE_Y);
+    return p;
+  }, [EYE_H, EYE_W, EYE_Y, R_EYE_X]);
 
   useEffect(() => {
     breatheY.value = withRepeat(
@@ -313,7 +328,19 @@ export const CatBase: React.FC<WenwenProps> = ({
       -1,
       false
     );
-  }, [CW, breatheY, earTwitch, tailWag]);
+    blinkScale.value = withRepeat(
+      withSequence(
+        withTiming(1, { duration: 2300 }),
+        withTiming(0.08, { duration: 75, easing: Easing.out(Easing.quad) }),
+        withTiming(1, { duration: 115, easing: Easing.out(Easing.quad) }),
+        withTiming(0.16, { duration: 55, easing: Easing.out(Easing.quad) }),
+        withTiming(1, { duration: 130, easing: Easing.out(Easing.quad) }),
+        withTiming(1, { duration: 1800 })
+      ),
+      -1,
+      false
+    );
+  }, [CW, blinkScale, breatheY, earTwitch, tailWag]);
 
   const greetingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -359,6 +386,21 @@ export const CatBase: React.FC<WenwenProps> = ({
     { translateX: -(HEAD_X + HEAD_W * 0.72) },
     { translateY: -(HEAD_Y + HEAD_H * 0.08) },
   ]);
+  const leftEyeT = useDerivedValue(() => [
+    { translateX: L_EYE_X },
+    { translateY: EYE_Y },
+    { scaleY: blinkScale.value },
+    { translateX: -L_EYE_X },
+    { translateY: -EYE_Y },
+  ]);
+  const rightEyeT = useDerivedValue(() => [
+    { translateX: R_EYE_X },
+    { translateY: EYE_Y },
+    { scaleY: blinkScale.value },
+    { translateX: -R_EYE_X },
+    { translateY: -EYE_Y },
+  ]);
+  const closedEyeOpacity = useDerivedValue(() => Math.max(0, 1 - blinkScale.value * 1.35));
 
   const headHighlightPath = useMemo(() => {
     const p = Skia.Path.Make();
@@ -405,9 +447,9 @@ export const CatBase: React.FC<WenwenProps> = ({
               <Path path={tailPath} color="rgba(255,255,255,0.3)" style="stroke" strokeWidth={CW * 0.045} strokeCap="round" />
             </Group>
 
-            <RoundedRect x={BODY_X} y={BODY_Y} width={BODY_W} height={BODY_H} r={BODY_W * 0.28} color={bodyColor}>
+            <Oval x={BODY_X} y={BODY_Y} width={BODY_W} height={BODY_H} color={bodyColor}>
               <LinearGradient start={vec(CX, BODY_Y)} end={vec(CX, BODY_Y + BODY_H)} colors={[highlight, bodyColor, shadow]} />
-            </RoundedRect>
+            </Oval>
             <Oval x={CX - BODY_W * 0.28} y={BODY_Y + BODY_H * 0.2} width={BODY_W * 0.56} height={BODY_H * 0.36} color={softHighlight} />
 
             <Oval x={CX - BODY_W * 0.38} y={BODY_Y + BODY_H * 0.72} width={BODY_W * 0.34} height={BODY_H * 0.2} color={bodyColor}>
@@ -440,33 +482,37 @@ export const CatBase: React.FC<WenwenProps> = ({
             <Oval x={CX - HEAD_W * 0.3} y={HEAD_Y + HEAD_H * 0.54} width={HEAD_W * 0.16} height={HEAD_H * 0.1} color={faceColor} opacity={0.35} />
             <Oval x={CX + HEAD_W * 0.14} y={HEAD_Y + HEAD_H * 0.54} width={HEAD_W * 0.16} height={HEAD_H * 0.1} color={faceColor} opacity={0.35} />
 
-            <Oval x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} color="rgba(255,255,255,0.92)" />
-            <Oval x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} color="rgba(255,255,255,0.92)" />
-            <Oval x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} style="stroke" strokeWidth={CW * 0.012} color="rgba(30,41,59,0.14)" />
-            <Oval x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} style="stroke" strokeWidth={CW * 0.012} color="rgba(30,41,59,0.14)" />
-            <Oval x={L_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeColor}>
-              <BlurMask blur={4} style="normal" />
-            </Oval>
-            <Oval x={R_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeColor}>
-              <BlurMask blur={4} style="normal" />
-            </Oval>
-            <Oval x={L_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeGlow} />
-            <Oval x={R_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeGlow} />
-            <Oval x={L_EYE_X + PUPIL_W * 0.08} y={EYE_Y - PUPIL_H * 0.28} width={PUPIL_W * 0.25} height={PUPIL_W * 0.25} color="rgba(255,255,255,0.9)" />
-            <Oval x={R_EYE_X + PUPIL_W * 0.08} y={EYE_Y - PUPIL_H * 0.28} width={PUPIL_W * 0.25} height={PUPIL_W * 0.25} color="rgba(255,255,255,0.9)" />
+            <Group transform={leftEyeT}>
+              <Oval x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} color="rgba(255,255,255,0.96)" />
+              <Oval x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} style="stroke" strokeWidth={CW * 0.011} color="rgba(30,41,59,0.13)" />
+              <Oval x={L_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeColor}>
+                <BlurMask blur={4} style="normal" />
+              </Oval>
+              <Oval x={L_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeGlow} />
+              <Oval x={L_EYE_X + PUPIL_W * 0.08} y={EYE_Y - PUPIL_H * 0.3} width={PUPIL_W * 0.26} height={PUPIL_W * 0.26} color="rgba(255,255,255,0.95)" />
+            </Group>
+            <Group transform={rightEyeT}>
+              <Oval x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} color="rgba(255,255,255,0.96)" />
+              <Oval x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} style="stroke" strokeWidth={CW * 0.011} color="rgba(30,41,59,0.13)" />
+              <Oval x={R_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeColor}>
+                <BlurMask blur={4} style="normal" />
+              </Oval>
+              <Oval x={R_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeGlow} />
+              <Oval x={R_EYE_X + PUPIL_W * 0.08} y={EYE_Y - PUPIL_H * 0.3} width={PUPIL_W * 0.26} height={PUPIL_W * 0.26} color="rgba(255,255,255,0.95)" />
+            </Group>
+            <Group opacity={closedEyeOpacity}>
+              <Path path={leftClosedEyePath} color={lineColor} style="stroke" strokeWidth={CW * 0.012} strokeCap="round" />
+              <Path path={rightClosedEyePath} color={lineColor} style="stroke" strokeWidth={CW * 0.012} strokeCap="round" />
+            </Group>
 
             <Path path={nosePath} color={eyeColor} />
-            <Path path={mouthPath} color={lineColor} style="stroke" strokeWidth={CW * 0.014} strokeCap="round" />
-            <Path path={leftWhiskerTop} color={lineColor} style="stroke" strokeWidth={CW * 0.011} strokeCap="round" />
-            <Path path={leftWhiskerMiddle} color={lineColor} style="stroke" strokeWidth={CW * 0.011} strokeCap="round" />
-            <Path path={leftWhiskerBottom} color={lineColor} style="stroke" strokeWidth={CW * 0.011} strokeCap="round" />
-            <Path path={rightWhiskerTop} color={lineColor} style="stroke" strokeWidth={CW * 0.011} strokeCap="round" />
-            <Path path={rightWhiskerMiddle} color={lineColor} style="stroke" strokeWidth={CW * 0.011} strokeCap="round" />
-            <Path path={rightWhiskerBottom} color={lineColor} style="stroke" strokeWidth={CW * 0.011} strokeCap="round" />
-
-            <RoundedRect x={CX - BODY_W * 0.22} y={BODY_Y + BODY_H * 0.5} width={BODY_W * 0.44} height={BODY_H * 0.06} r={BODY_H * 0.03} color={eyeColor}>
-              <BlurMask blur={4} style="normal" />
-            </RoundedRect>
+            <Path path={mouthPath} color={lineColor} style="stroke" strokeWidth={CW * 0.012} strokeCap="round" />
+            <Path path={leftWhiskerTop} color={lineColor} style="stroke" strokeWidth={CW * 0.009} strokeCap="round" />
+            <Path path={leftWhiskerMiddle} color={lineColor} style="stroke" strokeWidth={CW * 0.009} strokeCap="round" />
+            <Path path={leftWhiskerBottom} color={lineColor} style="stroke" strokeWidth={CW * 0.009} strokeCap="round" />
+            <Path path={rightWhiskerTop} color={lineColor} style="stroke" strokeWidth={CW * 0.009} strokeCap="round" />
+            <Path path={rightWhiskerMiddle} color={lineColor} style="stroke" strokeWidth={CW * 0.009} strokeCap="round" />
+            <Path path={rightWhiskerBottom} color={lineColor} style="stroke" strokeWidth={CW * 0.009} strokeCap="round" />
           </Group>
         </Canvas>
       </GestureDetector>

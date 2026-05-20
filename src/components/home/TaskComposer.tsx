@@ -3,15 +3,18 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WELLNESS_CATEGORIES, type SuggestedTask, type WellnessCategory } from '@/src/types/ai-task';
 import { useAppTheme } from '@/src/theme/app-theme';
+import { INPUT_LIMITS } from '@/src/utils/input-limits';
 
 type TaskComposerProps = {
-  onCreateTask: (title: string, detail: string, isRoutine: boolean) => void;
+  onCreateTask: (title: string, detail: string, isRoutine: boolean, due: string) => void;
   selectedCategory: WellnessCategory;
   onSelectCategory: (category: WellnessCategory) => void;
   onGenerateSuggestion: (category: WellnessCategory, focusText: string) => void;
   isGeneratingSuggestion: boolean;
   suggestedTasks: SuggestedTask[];
 };
+
+const DUE_OPTIONS = ['Today', 'Tonight', 'Tomorrow', 'Weekend', 'No date'] as const;
 
 export function TaskComposer({
   onCreateTask,
@@ -26,15 +29,17 @@ export function TaskComposer({
   const [detail, setDetail] = useState('');
   const [isRoutine, setIsRoutine] = useState(false);
   const [focusText, setFocusText] = useState('');
+  const [due, setDue] = useState<(typeof DUE_OPTIONS)[number]>('Today');
 
   const handleCreate = () => {
     const cleanTitle = title.trim();
     if (!cleanTitle) return;
 
-    onCreateTask(cleanTitle, detail.trim(), isRoutine);
+    onCreateTask(cleanTitle, detail.trim(), isRoutine, due);
     setTitle('');
     setDetail('');
     setIsRoutine(false);
+    setDue('Today');
   };
 
   return (
@@ -51,6 +56,7 @@ export function TaskComposer({
       <TextInput
         value={title}
         onChangeText={setTitle}
+        maxLength={INPUT_LIMITS.taskTitle}
         placeholder="What needs doing?"
         placeholderTextColor={theme.subtle}
         style={[
@@ -62,6 +68,7 @@ export function TaskComposer({
       <TextInput
         value={detail}
         onChangeText={setDetail}
+        maxLength={INPUT_LIMITS.taskDetail}
         placeholder="Optional note"
         placeholderTextColor={theme.subtle}
         style={[
@@ -98,6 +105,36 @@ export function TaskComposer({
           <Text style={[styles.routineCaption, { color: theme.muted }]}>Bring this task back tomorrow.</Text>
         </View>
       </Pressable>
+
+      <View style={styles.dueSection}>
+        <Text style={[styles.dueLabel, { color: theme.muted }]}>Timing</Text>
+        <View style={styles.dueOptions}>
+          {DUE_OPTIONS.map((option) => {
+            const isActive = due === option;
+            return (
+              <Pressable
+                key={option}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: isActive }}
+                accessibilityLabel={`Set task timing to ${option}`}
+                onPress={() => setDue(option)}
+                style={({ pressed }) => [
+                  styles.dueChip,
+                  {
+                    backgroundColor: isActive ? theme.primarySoft : theme.surface,
+                    borderColor: isActive ? theme.primary : theme.softBorder,
+                  },
+                  pressed && styles.categoryChipPressed,
+                ]}
+              >
+                <Text style={[styles.dueChipText, { color: isActive ? theme.primaryStrong : theme.muted }]}>
+                  {option}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Create task"
@@ -118,6 +155,7 @@ export function TaskComposer({
         <TextInput
           value={focusText}
           onChangeText={setFocusText}
+          maxLength={INPUT_LIMITS.taskFocus}
           placeholder="Focus or goal, e.g. Study Japanese"
           placeholderTextColor={theme.subtle}
           style={[
@@ -180,7 +218,7 @@ export function TaskComposer({
         <View style={styles.suggestionFooter}>
           <Text style={[styles.suggestionCount, { color: theme.muted }]}>
             {suggestedTasks.length === 0
-              ? 'Suggestions open in review.'
+              ? 'AI uses your category, focus text, and existing task titles to avoid repeats.'
               : 'Suggestions are ready.'}
           </Text>
         </View>
@@ -263,6 +301,32 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: 11,
     fontWeight: '600',
+  },
+  dueSection: {
+    gap: 8,
+  },
+  dueLabel: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  dueOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  dueChip: {
+    minHeight: 34,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dueChipText: {
+    fontSize: 11,
+    fontWeight: '900',
   },
   button: {
     minHeight: 46,

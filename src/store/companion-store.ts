@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import type { CompanionChatSummary, CompanionDayEntry, CompanionMessage } from '@/src/types/companion';
+import { clampText, INPUT_LIMITS } from '@/src/utils/input-limits';
 
 export const COMPANION_WELCOME_TEXT = 'Tell me what is on your mind. I can help you sort it into one clear next step.';
 
@@ -19,6 +20,7 @@ type CompanionStore = {
     messages: CompanionMessage[];
   }) => CompanionChatSummary;
   setDailyReviewShownDateKey: (dateKey: string) => void;
+  clearCompanionData: () => void;
   setHasHydrated: (value: boolean) => void;
 };
 
@@ -26,7 +28,7 @@ export function createCompanionMessage(role: CompanionMessage['role'], text: str
   return {
     id: `message-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
     role,
-    text,
+    text: clampText(text, INPUT_LIMITS.companionMessage).trim(),
     createdAt: new Date().toISOString(),
   };
 }
@@ -117,6 +119,13 @@ export const useCompanionStore = create<CompanionStore>()(
 
       setDailyReviewShownDateKey: (dateKey) => {
         set({ lastDailyReviewShownDateKey: dateKey });
+      },
+
+      clearCompanionData: () => {
+        set({
+          entries: {},
+          lastDailyReviewShownDateKey: '',
+        });
       },
     }),
     {

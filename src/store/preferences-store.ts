@@ -2,6 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { INPUT_LIMITS, sanitizeSingleLine } from '@/src/utils/input-limits';
+
 export type AppThemeMode = 'light' | 'dark';
 export type ReminderTimeKey = 'morning' | 'afternoon' | 'evening';
 export type AvatarPersona = 'bot' | 'cat';
@@ -21,9 +23,9 @@ export type HomeGuideState = {
 };
 
 export const DEFAULT_AVATAR_COLORS: AvatarColors = {
-  eyeColor: '#00D4C2',
-  faceColor: '#E2E8F0',
-  bodyColor: '#F0F2F5',
+  eyeColor: '#58CFC6',
+  faceColor: '#E9EFEA',
+  bodyColor: '#F7F3EC',
 };
 export const DEFAULT_AVATAR_PERSONA: AvatarPersona = 'bot';
 
@@ -32,6 +34,20 @@ export const DEFAULT_HOME_GUIDE: HomeGuideState = {
   visitedJournal: false,
   visitedCompanion: false,
 };
+
+const LEGACY_DEFAULT_AVATAR_COLORS: AvatarColors = {
+  eyeColor: '#00D4C2',
+  faceColor: '#E2E8F0',
+  bodyColor: '#F0F2F5',
+};
+
+function isLegacyDefaultAvatar(colors: AvatarColors) {
+  return (
+    colors.eyeColor === LEGACY_DEFAULT_AVATAR_COLORS.eyeColor &&
+    colors.faceColor === LEGACY_DEFAULT_AVATAR_COLORS.faceColor &&
+    colors.bodyColor === LEGACY_DEFAULT_AVATAR_COLORS.bodyColor
+  );
+}
 
 type PreferencesStore = {
   themeMode: AppThemeMode;
@@ -46,6 +62,8 @@ type PreferencesStore = {
   reminderNotificationId: string | null;
   nightlyReviewEnabled: boolean;
   nightlyReviewNotificationId: string | null;
+  companionMemoryEnabled: boolean;
+  reducedMotion: boolean;
   setThemeMode: (themeMode: AppThemeMode) => void;
   setDisplayName: (displayName: string) => void;
   completeOnboarding: (displayName: string) => void;
@@ -53,7 +71,11 @@ type PreferencesStore = {
   setAvatarPersona: (persona: AvatarPersona) => void;
   setAvatarColors: (colors: Partial<AvatarColors>) => void;
   dismissHomeGuide: () => void;
+  resetHomeGuide: () => void;
   markHomeGuideFeatureVisited: (feature: HomeGuideFeature) => void;
+  setCompanionMemoryEnabled: (enabled: boolean) => void;
+  setReducedMotion: (enabled: boolean) => void;
+  resetPreferences: () => void;
   setReminderSettings: (settings: Partial<{
     remindersEnabled: boolean;
     reminderTime: ReminderTimeKey;
@@ -78,10 +100,12 @@ export const usePreferencesStore = create<PreferencesStore>()(
       reminderNotificationId: null,
       nightlyReviewEnabled: false,
       nightlyReviewNotificationId: null,
+      companionMemoryEnabled: true,
+      reducedMotion: false,
       setThemeMode: (themeMode) => set({ themeMode }),
-      setDisplayName: (displayName) => set({ displayName }),
+      setDisplayName: (displayName) => set({ displayName: sanitizeSingleLine(displayName, INPUT_LIMITS.displayName) }),
       completeOnboarding: (displayName) => set({
-        displayName,
+        displayName: sanitizeSingleLine(displayName, INPUT_LIMITS.displayName) || 'Friend',
         hasCompletedOnboarding: true,
       }),
       setHasHydrated: (value) => set({ hasHydrated: value }),
@@ -99,6 +123,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
           dismissed: true,
         },
       })),
+      resetHomeGuide: () => set({ homeGuide: DEFAULT_HOME_GUIDE }),
       markHomeGuideFeatureVisited: (feature) => set((state) => ({
         homeGuide: {
           ...state.homeGuide,
@@ -106,6 +131,23 @@ export const usePreferencesStore = create<PreferencesStore>()(
           visitedCompanion: feature === 'companion' ? true : state.homeGuide.visitedCompanion,
         },
       })),
+      setCompanionMemoryEnabled: (companionMemoryEnabled) => set({ companionMemoryEnabled }),
+      setReducedMotion: (reducedMotion) => set({ reducedMotion }),
+      resetPreferences: () => set({
+        themeMode: 'light',
+        displayName: '',
+        hasCompletedOnboarding: false,
+        avatarPersona: DEFAULT_AVATAR_PERSONA,
+        avatarColors: DEFAULT_AVATAR_COLORS,
+        homeGuide: DEFAULT_HOME_GUIDE,
+        remindersEnabled: false,
+        reminderTime: 'morning',
+        reminderNotificationId: null,
+        nightlyReviewEnabled: false,
+        nightlyReviewNotificationId: null,
+        companionMemoryEnabled: true,
+        reducedMotion: false,
+      }),
       setReminderSettings: (settings) => set(settings),
     }),
     {
@@ -123,9 +165,15 @@ export const usePreferencesStore = create<PreferencesStore>()(
         reminderNotificationId: state.reminderNotificationId,
         nightlyReviewEnabled: state.nightlyReviewEnabled,
         nightlyReviewNotificationId: state.nightlyReviewNotificationId,
+        companionMemoryEnabled: state.companionMemoryEnabled,
+        reducedMotion: state.reducedMotion,
       }),
       onRehydrateStorage: () => (state) => {
-        state?.setAvatarColors({});
+        if (state && isLegacyDefaultAvatar(state.avatarColors)) {
+          state.setAvatarColors(DEFAULT_AVATAR_COLORS);
+        } else {
+          state?.setAvatarColors({});
+        }
         state?.setHasHydrated(true);
       },
     }

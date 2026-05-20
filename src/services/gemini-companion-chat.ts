@@ -51,7 +51,7 @@ function createFallbackCompanionReply(messages: CompanionMessage[], persona: Ava
 
 export async function generateCompanionReply(
   messages: CompanionMessage[],
-  options?: { onError?: GeminiErrorCallback; persona?: AvatarPersona }
+  options?: { onError?: GeminiErrorCallback; persona?: AvatarPersona; memoryContext?: string }
 ): Promise<string> {
   const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user')?.text ?? '';
   const persona = options?.persona ?? 'bot';
@@ -96,6 +96,14 @@ export async function generateCompanionReply(
     '- Do not scold, guilt, diagnose, moralize, or imply the user caused the problem.',
     '- Do not end every reply with a question.',
     '- Use at most one question, and only when it would genuinely help.',
+    '- If memory context is provided, use it only when relevant to the latest message.',
+    '- Do not list stored memories unless the user asks what you remember.',
+    '- If referencing memory, keep it broad and allow correction.',
+    '- Never make medical, mental health, personality, relationship, or identity claims from memory.',
+    '',
+    options?.memoryContext
+      ? ['Memory context:', options.memoryContext].join('\n')
+      : 'Memory context: None available.',
     '',
     'Recent conversation:',
     history,

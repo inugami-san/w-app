@@ -11,6 +11,7 @@ import type {
   JournalTaskSnapshot,
   MoodKey,
 } from '@/src/types/journal';
+import { clampText, INPUT_LIMITS } from '@/src/utils/input-limits';
 
 type JournalStore = {
   entries: Record<string, JournalEntry>;
@@ -37,6 +38,7 @@ type JournalStore = {
   }) => JournalSummary;
   setEvaluationFrequency: (frequency: EvaluationFrequency) => void;
   setDailyReviewShownDateKey: (dateKey: string) => void;
+  clearJournalData: () => void;
   setHasHydrated: (value: boolean) => void;
 };
 
@@ -75,7 +77,7 @@ export const useJournalStore = create<JournalStore>()(
               ...state.entries,
               [dateKey]: {
                 ...entry,
-                feelingNote: note,
+                feelingNote: clampText(note, INPUT_LIMITS.journalNote).trim(),
                 updatedAt: nowIso,
               },
             },
@@ -223,6 +225,14 @@ export const useJournalStore = create<JournalStore>()(
 
       setDailyReviewShownDateKey: (dateKey) => {
         set({ lastDailyReviewShownDateKey: dateKey });
+      },
+
+      clearJournalData: () => {
+        set({
+          entries: {},
+          lastDailyReviewShownDateKey: '',
+          lastFeelingScaleShownDateKey: '',
+        });
       },
     }),
     {

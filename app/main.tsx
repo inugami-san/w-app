@@ -3,12 +3,11 @@
  *
  * Color controls:
  *  - Eye color, Lip color, Body color — each with 6 presets from the
- *    reference image palette. Defaults match the original Wenwen design.
+ *    soft Wenwen palette. Defaults match the app-wide character defaults.
  */
 
 import React, { ComponentType, useEffect, useState } from 'react';
 import {
-  Platform,
   StyleSheet,
   View,
   TouchableOpacity,
@@ -27,38 +26,39 @@ import {
   usePreferencesStore,
 } from '@/src/store/preferences-store';
 import { useAppTheme } from '@/src/theme/app-theme';
+import { loadSkiaWebIfNeeded } from '@/src/utils/load-skia-web';
 
 // ─── Color presets  ──────────────────────────────────────────────────────────
-// Defaults taken directly from the reference Wenwen image:
-//   Body  → pearl white   #F0F2F5
-//   Eyes  → glowing teal  #00D4C2
-//   Face  → silver gray   #E2E8F0
+// Defaults:
+//   Body  → warm porcelain #F7F3EC
+//   Eyes  → soft aqua      #58CFC6
+//   Face  → mist green     #E9EFEA
 
 const EYE_COLORS = [
-  { label: 'Teal',   color: '#00D4C2' },   // ← image default
-  { label: 'Blue',   color: '#4D9FFF' },
-  { label: 'Purple', color: '#A855F7' },
-  { label: 'Pink',   color: '#F472B6' },
-  { label: 'Orange', color: '#FB923C' },
-  { label: 'Red',    color: '#EF4444' },
+  { label: 'Aqua',       color: '#58CFC6' },
+  { label: 'Cornflower', color: '#79AEEA' },
+  { label: 'Lavender',   color: '#B58BE8' },
+  { label: 'Rose',       color: '#E98BBC' },
+  { label: 'Apricot',    color: '#EFA15E' },
+  { label: 'Coral',      color: '#E76F6A' },
 ];
 
 const FACE_COLORS = [
-  { label: 'Silver', color: '#E2E8F0' },   // ← image default
-  { label: 'Gold',   color: '#FEF08A' },
-  { label: 'Mint',   color: '#A7F3D0' },
-  { label: 'Rose',   color: '#FECDD3' },
-  { label: 'Lilac',  color: '#E9D5FF' },
-  { label: 'Dark',   color: '#334155' },
+  { label: 'Mist',   color: '#E9EFEA' },
+  { label: 'Butter', color: '#F5E8A8' },
+  { label: 'Sage',   color: '#BFE8D4' },
+  { label: 'Petal',  color: '#F3CAD1' },
+  { label: 'Mauve',  color: '#DDC8F0' },
+  { label: 'Ink',    color: '#36475A' },
 ];
 
 const BODY_COLORS = [
-  { label: 'Pearl',  color: '#F0F2F5' },   // ← image default
-  { label: 'Silver', color: '#C8CDD6' },
-  { label: 'Sky',    color: '#BFD7F0' },
-  { label: 'Blush',  color: '#F0C8D4' },
-  { label: 'Cream',  color: '#F5EACC' },
-  { label: 'Slate',  color: '#4B5563' },
+  { label: 'Porcelain', color: '#F7F3EC' },
+  { label: 'Dove',      color: '#CBD2D9' },
+  { label: 'Powder',    color: '#C5D9ED' },
+  { label: 'Shell',     color: '#EBCBD5' },
+  { label: 'Oat',       color: '#EFE3C8' },
+  { label: 'Graphite',  color: '#56616B' },
 ];
 
 const PERSONA_OPTIONS: {
@@ -141,9 +141,9 @@ const row = StyleSheet.create({
     borderColor: 'transparent',
   },
   swatchSelected: {
-    borderColor: '#319A8D',
-    shadowColor: '#319A8D',
-    shadowOpacity: 0.28,
+    borderColor: '#52796B',
+    shadowColor: '#52796B',
+    shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
   },
@@ -176,13 +176,7 @@ export default function HomeScreen() {
 
   useEffect(() => {
     const load = async () => {
-      if (Platform.OS === 'web') {
-        const { LoadSkiaWeb } = await import('@shopify/react-native-skia/lib/commonjs/web/LoadSkiaWeb');
-        await (LoadSkiaWeb as Function)({
-          locateFile: (file: string) =>
-            `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.40.0/bin/full/${file}`,
-        });
-      }
+      await loadSkiaWebIfNeeded();
 
       const [botMod, catMod] = await Promise.all([
         import('@/components/WenwenBase'),
@@ -194,7 +188,9 @@ export default function HomeScreen() {
       });
     };
 
-    load().catch(console.error);
+    load().catch(() => {
+      setAvatarComponents(null);
+    });
   }, []);
 
   useEffect(() => {
@@ -222,7 +218,7 @@ export default function HomeScreen() {
 
   const saveAndOpenDashboard = () => {
     saveAvatar();
-    router.push({
+    router.replace({
       pathname: '/dashboard',
       params: { eyeColor, faceColor, bodyColor, persona },
     });
@@ -236,15 +232,15 @@ export default function HomeScreen() {
     }
     saveAvatar();
     if (tab === 'journal') {
-      router.push('/journal');
+      router.replace('/journal');
       return;
     }
     if (tab === 'settings') {
-      router.push('/settings');
+      router.replace('/settings');
       return;
     }
     if (tab === 'companion') {
-      router.push('/companion');
+      router.replace('/companion');
       return;
     }
     router.push('/modal');

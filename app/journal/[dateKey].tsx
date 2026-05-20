@@ -87,23 +87,23 @@ export default function JournalDateScreen() {
 
   const handleTabPress = (tab: DashboardTabKey) => {
     if (tab === 'journal') {
-      router.push('/journal');
+      router.replace('/journal');
       return;
     }
     if (tab === 'home') {
-      router.push('/dashboard');
+      router.replace('/dashboard');
       return;
     }
     if (tab === 'customize') {
-      router.push('/main');
+      router.replace('/main');
       return;
     }
     if (tab === 'settings') {
-      router.push('/settings');
+      router.replace('/settings');
       return;
     }
     if (tab === 'companion') {
-      router.push('/companion');
+      router.replace('/companion');
       return;
     }
     router.push('/modal');

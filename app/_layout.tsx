@@ -44,6 +44,7 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const themeMode = usePreferencesStore((state) => state.themeMode);
+  const reducedMotion = usePreferencesStore((state) => state.reducedMotion);
   const hasCompletedOnboarding = usePreferencesStore((state) => state.hasCompletedOnboarding);
   const preferencesHydrated = usePreferencesStore((state) => state.hasHydrated);
   const nightlyReviewEnabled = usePreferencesStore((state) => state.nightlyReviewEnabled);
@@ -75,6 +76,21 @@ export default function RootLayout() {
   const activeWellnessPeriodKeyRef = useRef('');
   const isDark = themeMode === 'dark';
   const appTheme = APP_THEME[themeMode];
+  const tabScreenOptions = useMemo(
+    () => ({
+      headerShown: false,
+      animation: reducedMotion ? ('none' as const) : ('fade' as const),
+      animationDuration: reducedMotion ? 0 : 120,
+    }),
+    [reducedMotion]
+  );
+  const loginScreenOptions = useMemo(
+    () => ({
+      headerShown: false,
+      animation: reducedMotion ? ('none' as const) : ('fade' as const),
+    }),
+    [reducedMotion]
+  );
   const storesHydrated =
     preferencesHydrated && tasksHydrated && journalHydrated && companionHydrated && wellnessReviewHydrated;
   const reviewActivitySignature = useMemo(() => {
@@ -292,13 +308,13 @@ export default function RootLayout() {
       <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
         <Stack>
           <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="login" options={{ headerShown: false, animation: 'fade' }} />
-          <Stack.Screen name="main" options={{ headerShown: false, animation: 'fade' }} />
-          <Stack.Screen name="dashboard" options={{ headerShown: false, animation: 'slide_from_right' }} />
-          <Stack.Screen name="journal" options={{ headerShown: false, animation: 'slide_from_right' }} />
-          <Stack.Screen name="journal/[dateKey]" options={{ headerShown: false, animation: 'slide_from_right' }} />
-          <Stack.Screen name="settings" options={{ headerShown: false, animation: 'slide_from_right' }} />
-          <Stack.Screen name="companion" options={{ headerShown: false, animation: 'slide_from_right' }} />
+          <Stack.Screen name="login" options={loginScreenOptions} />
+          <Stack.Screen name="main" options={tabScreenOptions} />
+          <Stack.Screen name="dashboard" options={tabScreenOptions} />
+          <Stack.Screen name="journal" options={tabScreenOptions} />
+          <Stack.Screen name="journal/[dateKey]" options={tabScreenOptions} />
+          <Stack.Screen name="settings" options={tabScreenOptions} />
+          <Stack.Screen name="companion" options={tabScreenOptions} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
         <StatusBar style={isDark ? 'light' : 'dark'} />

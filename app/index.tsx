@@ -1,9 +1,10 @@
 import React, { useState, useEffect, ComponentType } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import type { WenwenProps } from '@/components/WenwenBase';
+import { loadSkiaWebIfNeeded } from '@/src/utils/load-skia-web';
 
 export default function SplashScreen() {
   const [WenwenComponent, setWenwenComponent] = useState<ComponentType<WenwenProps> | null>(null);
@@ -11,12 +12,7 @@ export default function SplashScreen() {
   useEffect(() => {
     const loadWenwen = async () => {
       try {
-        if (Platform.OS === 'web') {
-          const { LoadSkiaWeb } = await import('@shopify/react-native-skia/lib/commonjs/web/LoadSkiaWeb');
-          await (LoadSkiaWeb as Function)({
-            locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.40.0/bin/full/${file}`,
-          });
-        }
+        await loadSkiaWebIfNeeded();
 
         const mod = await import('@/components/WenwenBase');
         setWenwenComponent(() => mod.WenwenBase as ComponentType<WenwenProps>);
@@ -24,8 +20,7 @@ export default function SplashScreen() {
         setTimeout(() => {
           router.replace('/login');
         }, 2500);
-      } catch (error) {
-        console.error('Failed to load Wenwen:', error);
+      } catch {
         setTimeout(() => router.replace('/login'), 1000);
       }
     };
@@ -39,9 +34,9 @@ export default function SplashScreen() {
         <View style={styles.splashCard}>
           {WenwenComponent && (
             <WenwenComponent
-              eyeColor="#43DED5"
-              faceColor="#DDF5F1"
-              bodyColor="#F4F7F8"
+              eyeColor="#58CFC6"
+              faceColor="#E9EFEA"
+              bodyColor="#F7F3EC"
               presentation="peek"
             />
           )}
@@ -54,7 +49,7 @@ export default function SplashScreen() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F7FAF8',
+    backgroundColor: '#F8F5EF',
   },
   container: {
     flex: 1,
@@ -68,10 +63,10 @@ const styles = StyleSheet.create({
     height: 230,
     borderRadius: 54,
     overflow: 'hidden',
-    backgroundColor: '#EAF7F4',
+    backgroundColor: '#E6EFE8',
     borderWidth: 1,
-    borderColor: '#D7E8E3',
-    shadowColor: '#B8D7D0',
+    borderColor: '#D7CDC0',
+    shadowColor: '#C7BBAE',
     shadowOpacity: 0.22,
     shadowRadius: 28,
     shadowOffset: { width: 0, height: 18 },

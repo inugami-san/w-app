@@ -21,6 +21,7 @@ import { router } from 'expo-router';
 
 import type { WenwenProps } from '@/components/WenwenBase';
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
+import { buildCompanionMemoryContext } from '@/src/services/companion-memory';
 import { generateCompanionReply } from '@/src/services/gemini-companion-chat';
 import { generateCompanionSummary } from '@/src/services/gemini-companion-summary';
 import {
@@ -31,12 +32,15 @@ import {
 import {
   DEFAULT_AVATAR_COLORS,
   DEFAULT_AVATAR_PERSONA,
+  type AvatarColors,
   type AvatarPersona,
   usePreferencesStore,
 } from '@/src/store/preferences-store';
 import { useAppTheme } from '@/src/theme/app-theme';
 import type { CompanionChatSummary, CompanionDayEntry, CompanionMessage } from '@/src/types/companion';
 import { getLocalDateKey } from '@/src/utils/date';
+import { clampText, INPUT_LIMITS } from '@/src/utils/input-limits';
+import { loadSkiaWebIfNeeded } from '@/src/utils/load-skia-web';
 
 function formatDateLabel(dateKey: string) {
   const [year, month, day] = dateKey.split('-').map(Number);
@@ -62,6 +66,58 @@ function getMatchingSummary(entry: CompanionDayEntry | undefined, messages: Comp
   return entry?.summaries.find((summary) => summary.messages.length === messages.length) ?? null;
 }
 
+type MiniPersonaAvatarProps = {
+  colors: AvatarColors;
+  persona: AvatarPersona;
+};
+
+function MiniPersonaAvatar({ colors, persona }: MiniPersonaAvatarProps) {
+  if (persona === 'cat') {
+    return (
+      <View style={styles.miniCatScene}>
+        <View style={[styles.miniCatEar, styles.miniCatEarLeft, { backgroundColor: colors.bodyColor }]}>
+          <View style={[styles.miniCatInnerEar, { backgroundColor: colors.faceColor }]} />
+        </View>
+        <View style={[styles.miniCatEar, styles.miniCatEarRight, { backgroundColor: colors.bodyColor }]}>
+          <View style={[styles.miniCatInnerEar, { backgroundColor: colors.faceColor }]} />
+        </View>
+        <View style={[styles.miniCatHead, { backgroundColor: colors.bodyColor }]}>
+          <View style={[styles.miniCatEye, styles.miniCatEyeLeft]}>
+            <View style={[styles.miniCatPupil, { backgroundColor: colors.eyeColor }]} />
+          </View>
+          <View style={[styles.miniCatEye, styles.miniCatEyeRight]}>
+            <View style={[styles.miniCatPupil, { backgroundColor: colors.eyeColor }]} />
+          </View>
+          <View style={[styles.miniCatMuzzle, { backgroundColor: colors.faceColor }]}>
+            <View style={[styles.miniCatNose, { borderBottomColor: colors.eyeColor }]} />
+          </View>
+          <View style={[styles.miniCatWhisker, styles.miniCatWhiskerTopLeft, { backgroundColor: colors.eyeColor }]} />
+          <View style={[styles.miniCatWhisker, styles.miniCatWhiskerMidLeft, { backgroundColor: colors.eyeColor }]} />
+          <View style={[styles.miniCatWhisker, styles.miniCatWhiskerLowLeft, { backgroundColor: colors.eyeColor }]} />
+          <View style={[styles.miniCatWhisker, styles.miniCatWhiskerTopRight, { backgroundColor: colors.eyeColor }]} />
+          <View style={[styles.miniCatWhisker, styles.miniCatWhiskerMidRight, { backgroundColor: colors.eyeColor }]} />
+          <View style={[styles.miniCatWhisker, styles.miniCatWhiskerLowRight, { backgroundColor: colors.eyeColor }]} />
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.miniBotScene}>
+      <View style={[styles.miniBotBody, { backgroundColor: colors.bodyColor }]}>
+        <View style={[styles.miniBotFaceRim, { borderColor: colors.faceColor }]}>
+          <View style={[styles.miniBotFace, { backgroundColor: colors.faceColor }]}>
+            <View style={[styles.miniBotEye, { backgroundColor: colors.eyeColor }]} />
+            <View style={[styles.miniBotSmile, { borderBottomColor: colors.eyeColor }]} />
+            <View style={[styles.miniBotEye, { backgroundColor: colors.eyeColor }]} />
+          </View>
+        </View>
+        <View style={[styles.miniBotChest, { backgroundColor: colors.faceColor }]} />
+      </View>
+    </View>
+  );
+}
+
 export default function CompanionScreen() {
   const theme = useAppTheme();
   const { height: windowHeight } = useWindowDimensions();
@@ -78,6 +134,7 @@ export default function CompanionScreen() {
   const hasHydrated = useCompanionStore((state) => state.hasHydrated);
   const avatarColors = usePreferencesStore((state) => state.avatarColors);
   const avatarPersona = usePreferencesStore((state) => state.avatarPersona);
+  const companionMemoryEnabled = usePreferencesStore((state) => state.companionMemoryEnabled);
   const markHomeGuideFeatureVisited = usePreferencesStore((state) => state.markHomeGuideFeatureVisited);
   const todayEntry = entries[today];
   const messages = todayEntry?.messages ?? fallbackMessages;
@@ -102,6 +159,20 @@ export default function CompanionScreen() {
   const webInputReset = Platform.OS === 'web' ? ({ outlineStyle: 'none' } as unknown as TextStyle) : null;
   const selectedPersona = avatarPersona ?? DEFAULT_AVATAR_PERSONA;
   const AvatarComponent = avatarComponents?.[selectedPersona] ?? null;
+  const selectedColors = {
+    eyeColor: avatarColors?.eyeColor ?? DEFAULT_AVATAR_COLORS.eyeColor,
+    faceColor: avatarColors?.faceColor ?? DEFAULT_AVATAR_COLORS.faceColor,
+    bodyColor: avatarColors?.bodyColor ?? DEFAULT_AVATAR_COLORS.bodyColor,
+  };
+  const renderMessageAvatar = () => (
+    <View
+      accessibilityRole="image"
+      accessibilityLabel="Wenwen persona"
+      style={[styles.messageAvatar, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}
+    >
+      <MiniPersonaAvatar colors={selectedColors} persona={selectedPersona} />
+    </View>
+  );
 
   const historyKeys = useMemo(() => {
     return Object.keys(entries)
@@ -218,13 +289,7 @@ export default function CompanionScreen() {
 
   useEffect(() => {
     const load = async () => {
-      if (Platform.OS === 'web') {
-        const { LoadSkiaWeb } = await import('@shopify/react-native-skia/lib/commonjs/web/LoadSkiaWeb');
-        await (LoadSkiaWeb as Function)({
-          locateFile: (file: string) =>
-            `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.40.0/bin/full/${file}`,
-        });
-      }
+      await loadSkiaWebIfNeeded();
 
       const [botMod, catMod] = await Promise.all([
         import('@/components/WenwenBase'),
@@ -266,19 +331,19 @@ export default function CompanionScreen() {
   const handleTabPress = (tab: DashboardTabKey) => {
     if (tab === 'companion') return;
     if (tab === 'home') {
-      router.push('/dashboard');
+      router.replace('/dashboard');
       return;
     }
     if (tab === 'customize') {
-      router.push('/main');
+      router.replace('/main');
       return;
     }
     if (tab === 'journal') {
-      router.push('/journal');
+      router.replace('/journal');
       return;
     }
     if (tab === 'settings') {
-      router.push('/settings');
+      router.replace('/settings');
     }
   };
 
@@ -324,7 +389,7 @@ export default function CompanionScreen() {
   );
 
   const handleSend = async () => {
-    const cleanInput = input.trim();
+    const cleanInput = clampText(input, INPUT_LIMITS.companionMessage).trim();
     if (!cleanInput || isSending) return;
 
     const userMessage = createCompanionMessage('user', cleanInput);
@@ -334,7 +399,11 @@ export default function CompanionScreen() {
     setIsSending(true);
 
     try {
-      const reply = await generateCompanionReply(nextMessages, { persona: selectedPersona });
+      const memoryContext = companionMemoryEnabled ? buildCompanionMemoryContext(today) : '';
+      const reply = await generateCompanionReply(nextMessages, {
+        persona: selectedPersona,
+        memoryContext,
+      });
       addMessage(today, createCompanionMessage('assistant', reply));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to reach Wenwen right now.';
@@ -446,9 +515,7 @@ export default function CompanionScreen() {
                   style={[styles.messageRow, isUser && styles.userMessageRow]}
                 >
                   {!isUser && (
-                    <View style={[styles.messageAvatar, { backgroundColor: theme.primarySoft }]}>
-                      <Text style={[styles.messageAvatarText, { color: theme.primaryStrong }]}>W</Text>
-                    </View>
+                    renderMessageAvatar()
                   )}
                   <View
                     style={[
@@ -469,9 +536,7 @@ export default function CompanionScreen() {
 
             {isSending && (
               <View style={styles.messageRow}>
-                <View style={[styles.messageAvatar, { backgroundColor: theme.primarySoft }]}>
-                  <Text style={[styles.messageAvatarText, { color: theme.primaryStrong }]}>W</Text>
-                </View>
+                {renderMessageAvatar()}
                 <View style={[styles.messageBubble, { backgroundColor: theme.surface, borderColor: theme.softBorder }]}>
                   <Text style={[styles.messageText, { color: theme.muted }]}>Wenwen is thinking...</Text>
                 </View>
@@ -484,6 +549,7 @@ export default function CompanionScreen() {
               ref={inputRef}
               value={input}
               onChangeText={setInput}
+              maxLength={INPUT_LIMITS.companionMessage}
               placeholder="Type a thought or update..."
               placeholderTextColor={theme.subtle}
               multiline
@@ -748,15 +814,184 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   messageAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  messageAvatarText: {
-    fontSize: 11,
-    fontWeight: '900',
+  miniBotScene: {
+    width: 36,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    position: 'relative',
+  },
+  miniBotBody: {
+    width: 30,
+    height: 28,
+    borderRadius: 11,
+    alignItems: 'center',
+    paddingTop: 5,
+    shadowColor: '#0B1720',
+    shadowOpacity: 0.16,
+    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  miniBotFaceRim: {
+    width: 24,
+    height: 13,
+    borderRadius: 8,
+    borderWidth: 1.4,
+    padding: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  miniBotFace: {
+    flex: 1,
+    borderRadius: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  miniBotEye: {
+    width: 4,
+    height: 7,
+    borderRadius: 3,
+  },
+  miniBotSmile: {
+    width: 8,
+    height: 5,
+    borderBottomWidth: 1.6,
+    borderRadius: 6,
+    marginTop: -1,
+  },
+  miniBotChest: {
+    width: 15,
+    height: 5,
+    borderRadius: 5,
+    opacity: 0.32,
+    marginTop: 4,
+  },
+  miniCatScene: {
+    width: 36,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    position: 'relative',
+  },
+  miniCatHead: {
+    width: 31,
+    height: 27,
+    borderRadius: 16,
+    alignItems: 'center',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  miniCatEar: {
+    position: 'absolute',
+    width: 12,
+    height: 15,
+    borderRadius: 7,
+    top: 1,
+    alignItems: 'center',
+    paddingTop: 4,
+    zIndex: 0,
+  },
+  miniCatEarLeft: {
+    left: 7,
+    transform: [{ rotate: '-25deg' }],
+  },
+  miniCatEarRight: {
+    right: 7,
+    transform: [{ rotate: '25deg' }],
+  },
+  miniCatInnerEar: {
+    width: 5,
+    height: 8,
+    borderRadius: 4,
+    opacity: 0.75,
+  },
+  miniCatEye: {
+    position: 'absolute',
+    width: 9,
+    height: 10,
+    borderRadius: 6,
+    top: 7,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(64, 82, 98, 0.18)',
+  },
+  miniCatEyeLeft: {
+    left: 8,
+  },
+  miniCatEyeRight: {
+    right: 8,
+  },
+  miniCatPupil: {
+    width: 4,
+    height: 6,
+    borderRadius: 3,
+  },
+  miniCatMuzzle: {
+    position: 'absolute',
+    width: 16,
+    height: 9,
+    borderRadius: 9,
+    left: 7.5,
+    bottom: 5,
+    opacity: 0.9,
+  },
+  miniCatNose: {
+    position: 'absolute',
+    left: 6,
+    top: 2,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 3,
+    borderRightWidth: 3,
+    borderBottomWidth: 4,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  miniCatWhisker: {
+    position: 'absolute',
+    width: 10,
+    height: 1.4,
+    borderRadius: 1,
+    opacity: 0.85,
+  },
+  miniCatWhiskerTopLeft: {
+    left: 2,
+    bottom: 10,
+    transform: [{ rotate: '10deg' }],
+  },
+  miniCatWhiskerMidLeft: {
+    left: 2,
+    bottom: 8,
+  },
+  miniCatWhiskerLowLeft: {
+    left: 3,
+    bottom: 6,
+    transform: [{ rotate: '-10deg' }],
+  },
+  miniCatWhiskerTopRight: {
+    right: 2,
+    bottom: 10,
+    transform: [{ rotate: '-10deg' }],
+  },
+  miniCatWhiskerMidRight: {
+    right: 2,
+    bottom: 8,
+  },
+  miniCatWhiskerLowRight: {
+    right: 3,
+    bottom: 6,
+    transform: [{ rotate: '10deg' }],
   },
   messageBubble: {
     maxWidth: '82%',

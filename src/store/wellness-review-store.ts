@@ -12,6 +12,7 @@ type WellnessReviewStore = {
   hasHydrated: boolean;
   addReview: (input: CreateWellnessReviewInput) => WellnessReviewSummary;
   setLastShownPeriodKey: (periodKey: string) => void;
+  clearWellnessReviews: () => void;
   setHasHydrated: (value: boolean) => void;
 };
 
@@ -47,6 +48,13 @@ export const useWellnessReviewStore = create<WellnessReviewStore>()(
 
       setLastShownPeriodKey: (periodKey) => {
         set({ lastShownPeriodKey: periodKey });
+      },
+
+      clearWellnessReviews: () => {
+        set({
+          reviews: {},
+          lastShownPeriodKey: '',
+        });
       },
     }),
     {

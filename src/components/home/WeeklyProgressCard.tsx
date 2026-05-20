@@ -49,6 +49,14 @@ export function WeeklyProgressCard() {
       completedTasks,
       journalDays,
       companionDays,
+      insight:
+        activeDays === 0
+          ? 'No pattern yet. One action today starts the record.'
+          : completedTasks >= 5
+            ? 'Tasks are your strongest signal this week.'
+            : journalDays + companionDays > completedTasks
+              ? 'Reflection is showing up more than task completion.'
+              : 'You have activity logged. Keep the next step small.',
     };
   }, [companionEntries, journalEntries, tasks]);
 
@@ -77,6 +85,11 @@ export function WeeklyProgressCard() {
           <Text style={[styles.statValue, { color: theme.primaryStrong }]}>{stats.journalDays + stats.companionDays}</Text>
           <Text style={[styles.statLabel, { color: theme.muted }]}>reviews</Text>
         </View>
+      </View>
+
+      <View style={[styles.insightRow, { backgroundColor: theme.softSurface }]}>
+        <Ionicons name="bulb-outline" size={16} color={theme.primaryStrong} />
+        <Text style={[styles.insightText, { color: theme.muted }]}>{stats.insight}</Text>
       </View>
     </View>
   );
@@ -133,5 +146,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     marginTop: 2,
+  },
+  insightRow: {
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  insightText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
   },
 });

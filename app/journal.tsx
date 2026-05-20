@@ -33,6 +33,7 @@ import type {
   JournalTaskSnapshot,
 } from '@/src/types/journal';
 import { getLocalDateKey } from '@/src/utils/date';
+import { clampText, INPUT_LIMITS } from '@/src/utils/input-limits';
 
 function formatDateLabel(dateKey: string) {
   const [year, month, day] = dateKey.split('-').map(Number);
@@ -129,11 +130,33 @@ export default function JournalScreen() {
   const [isReviewLoading, setIsReviewLoading] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<JournalSummary | null>(null);
   const [reviewError, setReviewError] = useState('');
-  const dateKeys = useMemo(() => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const historyDateKeys = useMemo(() => {
     return Object.keys(entries)
       .filter((dateKey) => hasHistoryContent(entries[dateKey], dateKey, today))
       .sort((a, b) => b.localeCompare(a));
   }, [entries, today]);
+  const filteredDateKeys = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return historyDateKeys;
+
+    return historyDateKeys.filter((dateKey) => {
+      const entry = entries[dateKey];
+      const tasks = getVisibleTasks(entry, dateKey, today);
+      const fields = [
+        formatDateLabel(dateKey),
+        dateKey,
+        entry?.feelingNote ?? '',
+        getMoodLabel(entry?.mood) ?? '',
+        getFeelingScoreLabel(entry?.feelingScale?.score),
+        ...getDailyContextLabels(entry?.dailyContext),
+        ...(entry?.summaries.flatMap((summary) => [summary.title, summary.body]) ?? []),
+        ...tasks.flatMap((task) => [task.title, task.detail]),
+      ];
+
+      return fields.some((field) => field.toLowerCase().includes(query));
+    });
+  }, [entries, historyDateKeys, searchQuery, today]);
 
   const yesterdayEntry = entries[yesterday];
   const hasYesterdayReview = hasHistoryContent(yesterdayEntry, yesterday, today);
@@ -164,19 +187,19 @@ export default function JournalScreen() {
   const handleTabPress = (tab: DashboardTabKey) => {
     if (tab === 'journal') return;
     if (tab === 'home') {
-      router.push('/dashboard');
+      router.replace('/dashboard');
       return;
     }
     if (tab === 'customize') {
-      router.push('/main');
+      router.replace('/main');
       return;
     }
     if (tab === 'settings') {
-      router.push('/settings');
+      router.replace('/settings');
       return;
     }
     if (tab === 'companion') {
-      router.push('/companion');
+      router.replace('/companion');
       return;
     }
     router.push('/modal');
@@ -302,7 +325,7 @@ export default function JournalScreen() {
   );
 
   const handleSaveJournal = async () => {
-    const cleanNote = journalNote.trim();
+    const cleanNote = clampText(journalNote, INPUT_LIMITS.journalNote).trim();
     if (!cleanNote && !journalImage) {
       Alert.alert('Add something first', 'Write a note or attach a photo before saving.');
       return;
@@ -383,7 +406,31 @@ export default function JournalScreen() {
           )}
         </View>
 
-        {dateKeys.length === 0 ? (
+        {historyDateKeys.length > 0 && (
+          <View style={[styles.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Ionicons name="search-outline" size={17} color={theme.subtle} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              accessibilityLabel="Search journal history"
+              placeholder="Search notes, moods, summaries..."
+              placeholderTextColor={theme.subtle}
+              style={[styles.searchInput, { color: theme.text }]}
+            />
+            {Boolean(searchQuery) && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Clear journal search"
+                onPress={() => setSearchQuery('')}
+                style={styles.clearSearchButton}
+              >
+                <Ionicons name="close" size={16} color={theme.muted} />
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        {historyDateKeys.length === 0 ? (
           <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <Ionicons name="journal-outline" size={24} color={theme.primaryStrong} />
             <Text style={[styles.emptyTitle, { color: theme.textStrong }]}>No journal history yet</Text>
@@ -399,9 +446,17 @@ export default function JournalScreen() {
               <Text style={styles.emptyActionText}>Write a short note</Text>
             </TouchableOpacity>
           </View>
+        ) : filteredDateKeys.length === 0 ? (
+          <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Ionicons name="search-outline" size={24} color={theme.primaryStrong} />
+            <Text style={[styles.emptyTitle, { color: theme.textStrong }]}>No matching entries</Text>
+            <Text style={[styles.emptyBody, { color: theme.muted }]}>
+              Try a mood, task name, date, or word from a note.
+            </Text>
+          </View>
         ) : (
           <View style={styles.list}>
-            {dateKeys.map((dateKey) => {
+            {filteredDateKeys.map((dateKey) => {
               const entry = entries[dateKey];
               const sourceTasks = getVisibleTasks(entry, dateKey, today);
               const finishedCount = sourceTasks.filter((task) => task.done).length;
@@ -530,6 +585,7 @@ export default function JournalScreen() {
               <TextInput
                 value={journalNote}
                 onChangeText={setJournalNote}
+                maxLength={INPUT_LIMITS.journalNote}
                 accessibilityLabel="Journal note"
                 placeholder="Write anything you want to remember about today..."
                 placeholderTextColor={theme.subtle}
@@ -701,6 +757,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginBottom: 16,
+  },
+  searchBox: {
+    minHeight: 46,
+    borderRadius: 16,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 42,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  clearSearchButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   addJournalButton: {
     minHeight: 46,

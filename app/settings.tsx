@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
 import { REMINDER_TIME_OPTIONS, syncGentleReminder } from '@/src/services/gentle-reminders';
 import { NIGHTLY_REVIEW_TIME, syncNightlyReviewNotification } from '@/src/services/nightly-review-notifications';
+import { useCompanionStore } from '@/src/store/companion-store';
 import { useJournalStore } from '@/src/store/journal-store';
 import { type AppThemeMode, type ReminderTimeKey, usePreferencesStore } from '@/src/store/preferences-store';
+import { useTaskStore } from '@/src/store/task-store';
+import { useWellnessReviewStore } from '@/src/store/wellness-review-store';
 import { useAppTheme } from '@/src/theme/app-theme';
 import type { EvaluationFrequency } from '@/src/types/journal';
+import { INPUT_LIMITS } from '@/src/utils/input-limits';
 
 const FREQUENCY_OPTIONS: {
   value: EvaluationFrequency;
@@ -58,8 +62,14 @@ export default function SettingsScreen() {
   const [isNightlyReviewBusy, setIsNightlyReviewBusy] = useState(false);
   const frequency = useJournalStore((state) => state.evaluationFrequency);
   const setFrequency = useJournalStore((state) => state.setEvaluationFrequency);
+  const clearJournalData = useJournalStore((state) => state.clearJournalData);
+  const clearCompanionData = useCompanionStore((state) => state.clearCompanionData);
+  const clearTasks = useTaskStore((state) => state.clearTasks);
+  const clearWellnessReviews = useWellnessReviewStore((state) => state.clearWellnessReviews);
   const themeMode = usePreferencesStore((state) => state.themeMode);
   const setThemeMode = usePreferencesStore((state) => state.setThemeMode);
+  const reducedMotion = usePreferencesStore((state) => state.reducedMotion);
+  const setReducedMotion = usePreferencesStore((state) => state.setReducedMotion);
   const displayName = usePreferencesStore((state) => state.displayName);
   const setDisplayName = usePreferencesStore((state) => state.setDisplayName);
   const remindersEnabled = usePreferencesStore((state) => state.remindersEnabled);
@@ -67,25 +77,29 @@ export default function SettingsScreen() {
   const reminderNotificationId = usePreferencesStore((state) => state.reminderNotificationId);
   const nightlyReviewEnabled = usePreferencesStore((state) => state.nightlyReviewEnabled);
   const nightlyReviewNotificationId = usePreferencesStore((state) => state.nightlyReviewNotificationId);
+  const companionMemoryEnabled = usePreferencesStore((state) => state.companionMemoryEnabled);
+  const setCompanionMemoryEnabled = usePreferencesStore((state) => state.setCompanionMemoryEnabled);
+  const resetHomeGuide = usePreferencesStore((state) => state.resetHomeGuide);
+  const resetPreferences = usePreferencesStore((state) => state.resetPreferences);
   const setReminderSettings = usePreferencesStore((state) => state.setReminderSettings);
   const theme = useAppTheme();
 
   const handleTabPress = (tab: DashboardTabKey) => {
     if (tab === 'settings') return;
     if (tab === 'home') {
-      router.push('/dashboard');
+      router.replace('/dashboard');
       return;
     }
     if (tab === 'customize') {
-      router.push('/main');
+      router.replace('/main');
       return;
     }
     if (tab === 'journal') {
-      router.push('/journal');
+      router.replace('/journal');
       return;
     }
     if (tab === 'companion') {
-      router.push('/companion');
+      router.replace('/companion');
       return;
     }
     router.push('/modal');
@@ -156,6 +170,119 @@ export default function SettingsScreen() {
     }
   };
 
+  const confirmAction = (title: string, message: string, onConfirm: () => void | Promise<void>) => {
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Continue',
+        style: 'destructive',
+        onPress: () => {
+          void onConfirm();
+        },
+      },
+    ]);
+  };
+
+  const handleReplayGuide = () => {
+    resetHomeGuide();
+    Alert.alert('Guide restored', 'The Home guide will appear again on the dashboard.');
+    router.replace('/dashboard');
+  };
+
+  const handleExportData = async () => {
+    const preferenceState = usePreferencesStore.getState();
+    const journalState = useJournalStore.getState();
+    const taskState = useTaskStore.getState();
+    const companionState = useCompanionStore.getState();
+    const reviewState = useWellnessReviewStore.getState();
+
+    const exportPayload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      profile: {
+        displayName: preferenceState.displayName,
+        themeMode: preferenceState.themeMode,
+        avatarPersona: preferenceState.avatarPersona,
+        avatarColors: preferenceState.avatarColors,
+      },
+      settings: {
+        evaluationFrequency: journalState.evaluationFrequency,
+        remindersEnabled: preferenceState.remindersEnabled,
+        reminderTime: preferenceState.reminderTime,
+        nightlyReviewEnabled: preferenceState.nightlyReviewEnabled,
+        companionMemoryEnabled: preferenceState.companionMemoryEnabled,
+        reducedMotion: preferenceState.reducedMotion,
+      },
+      tasks: taskState.tasks,
+      journalEntries: journalState.entries,
+      companionEntries: companionState.entries,
+      wellnessReviews: reviewState.reviews,
+    };
+
+    try {
+      await Share.share({
+        title: 'Wenwen data export',
+        message: JSON.stringify(exportPayload, null, 2),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to open the export sheet.';
+      Alert.alert('Export failed', message);
+    }
+  };
+
+  const handleClearCompanionMemory = () => {
+    confirmAction(
+      'Clear companion memory?',
+      'This removes saved companion chats and summaries from this device.',
+      clearCompanionData
+    );
+  };
+
+  const handleClearJournalData = () => {
+    confirmAction(
+      'Clear journals and reviews?',
+      'This removes journal entries, feeling check-ins, attached photo references, and wellness reviews from this device.',
+      () => {
+        clearJournalData();
+        clearWellnessReviews();
+      }
+    );
+  };
+
+  const handleClearTasks = () => {
+    confirmAction(
+      'Clear tasks?',
+      'This removes your current task list and resets the starter-task prompt.',
+      clearTasks
+    );
+  };
+
+  const handleClearAllData = () => {
+    confirmAction(
+      'Clear all Wenwen data?',
+      'This removes tasks, journals, companion chats, reviews, preferences, reminders, and onboarding state from this device.',
+      async () => {
+        await syncGentleReminder({
+          enabled: false,
+          time: reminderTime,
+          existingNotificationId: reminderNotificationId,
+        });
+        await syncNightlyReviewNotification({
+          enabled: false,
+          existingNotificationId: nightlyReviewNotificationId,
+        });
+
+        clearTasks();
+        clearJournalData();
+        clearCompanionData();
+        clearWellnessReviews();
+        setFrequency('daily');
+        resetPreferences();
+        router.replace('/login');
+      }
+    );
+  };
+
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -176,6 +303,7 @@ export default function SettingsScreen() {
             placeholder="Name"
             placeholderTextColor={theme.subtle}
             autoCapitalize="words"
+            maxLength={INPUT_LIMITS.displayName}
             style={[
               styles.profileInput,
               {
@@ -185,6 +313,33 @@ export default function SettingsScreen() {
               },
             ]}
           />
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.dataRow}>
+            <View style={[styles.dataIcon, { backgroundColor: theme.primarySoft }]}>
+              <Ionicons name="map-outline" size={18} color={theme.primaryStrong} />
+            </View>
+            <View style={styles.optionTextWrap}>
+              <Text style={[styles.cardTitle, { color: theme.textStrong }]}>How Wenwen works</Text>
+              <Text style={[styles.cardCaption, { color: theme.muted }]}>
+                Tasks help you choose one action, Journal stores daily notes, and Companion helps sort thoughts into a next step.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Replay Wenwen guide"
+                onPress={handleReplayGuide}
+                style={({ pressed }) => [
+                  styles.secondaryActionButton,
+                  { backgroundColor: theme.softSurface, borderColor: theme.softBorder },
+                  pressed && styles.actionPressed,
+                ]}
+              >
+                <Ionicons name="refresh-outline" size={16} color={theme.primaryStrong} />
+                <Text style={[styles.secondaryActionText, { color: theme.primaryStrong }]}>Replay guide</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -244,6 +399,38 @@ export default function SettingsScreen() {
                 </Pressable>
               );
             })}
+          </View>
+
+          <View style={[styles.inlineSetting, { borderTopColor: theme.border }]}>
+            <View style={styles.optionTextWrap}>
+              <Text style={[styles.optionTitle, { color: theme.textStrong }]}>Reduced motion</Text>
+              <Text style={[styles.optionDetail, { color: theme.muted }]}>
+                Minimizes screen and tab movement for a steadier app feel.
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: reducedMotion }}
+              accessibilityLabel="Enable reduced motion"
+              onPress={() => setReducedMotion(!reducedMotion)}
+              style={[
+                styles.switchTrack,
+                {
+                  backgroundColor: reducedMotion ? theme.primary : theme.softSurface,
+                  borderColor: reducedMotion ? theme.primary : theme.softBorder,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.switchThumb,
+                  {
+                    backgroundColor: reducedMotion ? '#FFFFFF' : theme.subtle,
+                    transform: [{ translateX: reducedMotion ? 18 : 0 }],
+                  },
+                ]}
+              />
+            </Pressable>
           </View>
         </View>
 
@@ -413,6 +600,60 @@ export default function SettingsScreen() {
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.optionTextWrap}>
+              <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Companion memory</Text>
+              <Text style={[styles.cardCaption, { color: theme.muted }]}>
+                Let Wenwen use recent tasks, journals, check-ins, and previous chats to answer with more context.
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: companionMemoryEnabled }}
+              accessibilityLabel="Enable companion memory"
+              onPress={() => setCompanionMemoryEnabled(!companionMemoryEnabled)}
+              style={[
+                styles.switchTrack,
+                {
+                  backgroundColor: companionMemoryEnabled ? theme.primary : theme.softSurface,
+                  borderColor: companionMemoryEnabled ? theme.primary : theme.softBorder,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.switchThumb,
+                  {
+                    backgroundColor: companionMemoryEnabled ? '#FFFFFF' : theme.subtle,
+                    transform: [{ translateX: companionMemoryEnabled ? 18 : 0 }],
+                  },
+                ]}
+              />
+            </Pressable>
+          </View>
+          <View style={[styles.fixedTimeRow, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}>
+            <Ionicons name="information-circle-outline" size={16} color={theme.primaryStrong} />
+            <Text style={[styles.fixedTimeText, { color: theme.muted }]}>
+              When enabled, relevant local memory is included with companion AI requests.
+            </Text>
+          </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.dataRow}>
+            <View style={[styles.dataIcon, { backgroundColor: theme.primarySoft }]}>
+              <Ionicons name="sparkles-outline" size={18} color={theme.primaryStrong} />
+            </View>
+            <View style={styles.optionTextWrap}>
+              <Text style={[styles.cardTitle, { color: theme.textStrong }]}>AI transparency</Text>
+              <Text style={[styles.cardCaption, { color: theme.muted }]}>
+                AI suggestions may send task titles, journal text, attached image data, companion messages, and selected memory context when needed. Wenwen uses local fallback responses when AI fails.
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.dataRow}>
             <View style={[styles.dataIcon, { backgroundColor: theme.primarySoft }]}>
               <Ionicons name="shield-checkmark-outline" size={18} color={theme.primaryStrong} />
@@ -420,8 +661,78 @@ export default function SettingsScreen() {
             <View style={styles.optionTextWrap}>
               <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Data safety</Text>
               <Text style={[styles.cardCaption, { color: theme.muted }]}>
-                Tasks, journals, chat history, and preferences are stored on this device. AI summaries only use the text needed to write the review.
+                Tasks, journals, chat history, and preferences are stored on this device. AI features only send the context needed for the current request.
               </Text>
+              <View style={styles.dataActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Export Wenwen data"
+                  onPress={handleExportData}
+                  style={({ pressed }) => [
+                    styles.secondaryActionButton,
+                    { backgroundColor: theme.softSurface, borderColor: theme.softBorder },
+                    pressed && styles.actionPressed,
+                  ]}
+                >
+                  <Ionicons name="download-outline" size={16} color={theme.primaryStrong} />
+                  <Text style={[styles.secondaryActionText, { color: theme.primaryStrong }]}>Export data</Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear companion memory"
+                  onPress={handleClearCompanionMemory}
+                  style={({ pressed }) => [
+                    styles.secondaryActionButton,
+                    { backgroundColor: theme.softSurface, borderColor: theme.softBorder },
+                    pressed && styles.actionPressed,
+                  ]}
+                >
+                  <Ionicons name="chatbubble-ellipses-outline" size={16} color={theme.primaryStrong} />
+                  <Text style={[styles.secondaryActionText, { color: theme.primaryStrong }]}>Clear chats</Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear journals and reviews"
+                  onPress={handleClearJournalData}
+                  style={({ pressed }) => [
+                    styles.secondaryActionButton,
+                    { backgroundColor: theme.softSurface, borderColor: theme.softBorder },
+                    pressed && styles.actionPressed,
+                  ]}
+                >
+                  <Ionicons name="journal-outline" size={16} color={theme.primaryStrong} />
+                  <Text style={[styles.secondaryActionText, { color: theme.primaryStrong }]}>Clear journals</Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear tasks"
+                  onPress={handleClearTasks}
+                  style={({ pressed }) => [
+                    styles.secondaryActionButton,
+                    { backgroundColor: theme.softSurface, borderColor: theme.softBorder },
+                    pressed && styles.actionPressed,
+                  ]}
+                >
+                  <Ionicons name="checkmark-circle-outline" size={16} color={theme.primaryStrong} />
+                  <Text style={[styles.secondaryActionText, { color: theme.primaryStrong }]}>Clear tasks</Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear all Wenwen data"
+                  onPress={handleClearAllData}
+                  style={({ pressed }) => [
+                    styles.dangerActionButton,
+                    pressed && styles.actionPressed,
+                  ]}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#C33B3B" />
+                  <Text style={styles.dangerActionText}>Clear all data</Text>
+                </Pressable>
+              </View>
             </View>
           </View>
         </View>
@@ -503,6 +814,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  inlineSetting: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   optionDisabled: {
     opacity: 0.56,
@@ -587,6 +906,46 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  dataActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  secondaryActionButton: {
+    minHeight: 38,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  secondaryActionText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  dangerActionButton: {
+    minHeight: 38,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#FFD3D3',
+    backgroundColor: '#FFF0F0',
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  dangerActionText: {
+    color: '#C33B3B',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  actionPressed: {
+    opacity: 0.84,
   },
   bottomTabWrap: {
     position: 'absolute',

@@ -6,6 +6,7 @@ import { createDefaultTasks } from '@/src/features/tasks/defaultTasks';
 import { useJournalStore } from '@/src/store/journal-store';
 import type { TaskItem } from '@/src/types/task';
 import { getLocalDateKey } from '@/src/utils/date';
+import { INPUT_LIMITS, sanitizeSingleLine } from '@/src/utils/input-limits';
 
 type CreateTaskInput = {
   title: string;
@@ -28,6 +29,7 @@ type TaskStore = {
   deleteTask: (id: string) => void;
   startCompletionCooldown: (durationMs: number) => void;
   resetDailyTasks: (force?: boolean) => void;
+  clearTasks: () => void;
   setHasHydrated: (value: boolean) => void;
 };
 
@@ -87,7 +89,7 @@ export const useTaskStore = create<TaskStore>()(
       },
 
       addTask: ({ title, detail, due, isRoutine }) => {
-        const cleanTitle = title.trim();
+        const cleanTitle = sanitizeSingleLine(title, INPUT_LIMITS.taskTitle);
         if (!cleanTitle) return;
 
         const nowIso = new Date().toISOString();
@@ -95,8 +97,8 @@ export const useTaskStore = create<TaskStore>()(
         const newTask: TaskItem = {
           id: makeTaskId(),
           title: cleanTitle,
-          detail: detail?.trim() || 'Custom task',
-          due: due?.trim() || 'Today',
+          detail: detail ? sanitizeSingleLine(detail, INPUT_LIMITS.taskDetail) || 'Custom task' : 'Custom task',
+          due: due ? sanitizeSingleLine(due, 40) || 'Today' : 'Today',
           done: false,
           isRoutine: Boolean(isRoutine),
           createdAt: nowIso,
@@ -128,6 +130,15 @@ export const useTaskStore = create<TaskStore>()(
 
       startCompletionCooldown: (durationMs) => {
         set({ completionCooldownUntil: Date.now() + durationMs });
+      },
+
+      clearTasks: () => {
+        set({
+          tasks: [],
+          lastDailyReset: getLocalDateKey(new Date()),
+          completionCooldownUntil: 0,
+          hasDecidedStarterTasks: false,
+        });
       },
 
       resetDailyTasks: (force = false) => {

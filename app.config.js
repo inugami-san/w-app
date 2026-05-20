@@ -13,7 +13,7 @@ export default {
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: '#E6F4FE',
+      backgroundColor: '#F8F5EF',
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundImage: './assets/images/android-icon-background.png',
       monochromeImage: './assets/images/android-icon-monochrome.png',
@@ -26,10 +26,9 @@ export default {
     favicon: './assets/images/favicon.png',
   },
   extra: {
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY || process.env.EXPO_PUBLIC_GEMINI_API_KEY,
-     eas: {
-        projectId: "da47e4d2-6af8-4751-a972-60656bde75eb"
-     }
+    eas: {
+      projectId: 'da47e4d2-6af8-4751-a972-60656bde75eb',
+    },
   },
   plugins: [
     'expo-router',
@@ -39,7 +38,7 @@ export default {
         image: './assets/images/splash-icon.png',
         imageWidth: 280,
         resizeMode: 'contain',
-        backgroundColor: '#F7FAF8',
+        backgroundColor: '#F8F5EF',
       },
     ],
     [

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Dimensions, StyleSheet, View } from 'react-native';
+import { Dimensions, type LayoutChangeEvent, StyleSheet, View } from 'react-native';
 import {
   BlurMask,
   Canvas,
@@ -86,9 +86,9 @@ function makeRoundedRectPath(x: number, y: number, width: number, height: number
 }
 
 export const WenwenBase: React.FC<WenwenProps> = ({
-  eyeColor = '#00D4C2',
-  faceColor = '#E2E8F0',
-  bodyColor = '#F0F2F5',
+  eyeColor = '#58CFC6',
+  faceColor = '#E9EFEA',
+  bodyColor = '#F7F3EC',
   presentation = 'full',
 }) => {
   const [size, setSize] = useState(() => {
@@ -96,8 +96,8 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     return { w: width, h: height * 0.7 };
   });
 
-  const onLayout = (e: any) => {
-    const { width, height } = e.nativeEvent.layout;
+  const onLayout = (event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
     if (width > 0 && height > 0) {
       setSize({ w: width, h: height });
     }
@@ -109,26 +109,26 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   const isShowcase = presentation === 'showcase';
 
   const CW = Math.min(
-    SW * (isPeek ? 0.78 : isShowcase ? 0.82 : 0.72),
-    SH * (isPeek ? 1.45 : isShowcase ? 0.88 : 0.78),
-    isShowcase ? 360 : 320
+    SW * (isPeek ? 0.72 : isShowcase ? 0.78 : 0.68),
+    SH * (isPeek ? 1.38 : isShowcase ? 0.82 : 0.74),
+    isShowcase ? 340 : 300
   );
-  const CH = CW * 1.04;
+  const CH = CW;
   const CX = SW / 2;
-  const CY = SH * (isPeek ? 0.78 : isShowcase ? 0.57 : 0.52);
+  const CY = SH * (isPeek ? 0.8 : isShowcase ? 0.58 : 0.53);
 
-  const BODY_W = CW * 0.86;
-  const BODY_H = CH * 0.82;
+  const BODY_W = CW * 0.78;
+  const BODY_H = CH * 0.74;
 
-  const FACE_BEZEL = CW * 0.055;
-  const FACE_W = BODY_W * 0.76;
-  const FACE_H = BODY_H * 0.32;
+  const FACE_BEZEL = CW * 0.045;
+  const FACE_W = BODY_W * 0.8;
+  const FACE_H = BODY_H * 0.31;
   const FACE_X = CX - FACE_W / 2;
-  const FACE_Y = CY - BODY_H * 0.36;
+  const FACE_Y = CY - BODY_H * 0.35;
   const FACE_R = FACE_H * 0.42;
 
-  const EYE_W = FACE_W * 0.095;
-  const EYE_H = FACE_H * 0.48;
+  const EYE_W = FACE_W * 0.09;
+  const EYE_H = FACE_H * 0.46;
   const EYE_Y = FACE_Y + FACE_H * 0.47;
   const L_EYE_X = CX - FACE_W * 0.22;
   const R_EYE_X = CX + FACE_W * 0.22;
@@ -152,20 +152,12 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   const H_RIGHT = CX - TV_W * 0.03;
   const I_CENTER = CX + TV_W * 0.19;
 
-  const FOOT_W = BODY_W * 0.34;
-  const FOOT_H = BODY_H * 0.2;
-  const L_FPX = CX - BODY_W * 0.24;
-  const L_FPY = CY + BODY_H * 0.53;
-  const R_FPX = CX + BODY_W * 0.24;
-  const R_FPY = CY + BODY_H * 0.53;
-
-  const ARM_W = BODY_W * 0.23;
-  const ARM_H = BODY_H * 0.36;
-  const ARM_TOUCH_RADIUS = ARM_H * 0.62;
-  const L_ARM_CX = CX - BODY_W * 0.6;
-  const L_ARM_CY = CY + BODY_H * 0.13;
-  const R_ARM_CX = CX + BODY_W * 0.6;
-  const R_ARM_CY = CY + BODY_H * 0.13;
+  const FOOT_W = BODY_W * 0.28;
+  const FOOT_H = BODY_H * 0.15;
+  const L_FPX = CX - BODY_W * 0.22;
+  const L_FPY = CY + BODY_H * 0.48;
+  const R_FPX = CX + BODY_W * 0.22;
+  const R_FPY = CY + BODY_H * 0.48;
 
   const bodyHighlight = useMemo(() => mixHexColor(bodyColor, '#FFFFFF', 0.68), [bodyColor]);
   const bodySoftHighlight = useMemo(() => mixHexColor(bodyColor, '#FFFFFF', 0.42), [bodyColor]);
@@ -184,13 +176,13 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     const h = BODY_H / 2;
 
     p.moveTo(x, y - h);
-    p.cubicTo(x + w * 0.88, y - h, x + w, y - h * 0.5, x + w, y - h * 0.08);
-    p.lineTo(x + w, y + h * 0.34);
-    p.cubicTo(x + w, y + h * 0.78, x + w * 0.65, y + h, x + w * 0.25, y + h);
-    p.lineTo(x - w * 0.25, y + h);
-    p.cubicTo(x - w * 0.65, y + h, x - w, y + h * 0.78, x - w, y + h * 0.34);
-    p.lineTo(x - w, y - h * 0.08);
-    p.cubicTo(x - w, y - h * 0.5, x - w * 0.88, y - h, x, y - h);
+    p.cubicTo(x + w * 0.72, y - h, x + w * 0.98, y - h * 0.62, x + w * 0.98, y - h * 0.1);
+    p.lineTo(x + w * 0.98, y + h * 0.28);
+    p.cubicTo(x + w * 0.98, y + h * 0.73, x + w * 0.62, y + h, x + w * 0.2, y + h);
+    p.lineTo(x - w * 0.2, y + h);
+    p.cubicTo(x - w * 0.62, y + h, x - w * 0.98, y + h * 0.73, x - w * 0.98, y + h * 0.28);
+    p.lineTo(x - w * 0.98, y - h * 0.1);
+    p.cubicTo(x - w * 0.98, y - h * 0.62, x - w * 0.72, y - h, x, y - h);
     p.close();
 
     return p;
@@ -214,18 +206,13 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   const squashY = useSharedValue(1);
   const stretchX = useSharedValue(1);
   const bodyTilt = useSharedValue(0);
-  const lArmAngle = useSharedValue(0.0);
-  const rArmAngle = useSharedValue(0.0);
-  const idleArmAngle = useSharedValue(0.0);
   const idleLegY = useSharedValue(0.0);
   const happyFaceY = useSharedValue(0.0);
-  const hiWave = useSharedValue(0.0);
   const hiWaveBodyY = useSharedValue(0.0);
   const tvOverlay = useSharedValue(0.0);
   const tvTextOpacity = useSharedValue(0.0);
   const tvScanProgress = useSharedValue(0.0);
   const tvScanOpacity = useSharedValue(0.0);
-  const activeTarget = useSharedValue(0);
 
   useEffect(() => {
     breatheY.value = withRepeat(withTiming(-4, { duration: 2200, easing: Easing.inOut(Easing.sin) }), -1, true);
@@ -241,14 +228,6 @@ export const WenwenBase: React.FC<WenwenProps> = ({
       withSequence(
         withTiming(0.012, { duration: 1600, easing: Easing.inOut(Easing.sin) }),
         withTiming(-0.012, { duration: 1600, easing: Easing.inOut(Easing.sin) })
-      ),
-      -1,
-      true
-    );
-    idleArmAngle.value = withRepeat(
-      withSequence(
-        withTiming(0.045, { duration: 2200, easing: Easing.inOut(Easing.sin) }),
-        withTiming(0.0, { duration: 2200, easing: Easing.inOut(Easing.sin) })
       ),
       -1,
       true
@@ -269,13 +248,12 @@ export const WenwenBase: React.FC<WenwenProps> = ({
       -1,
       true
     );
-  }, [CW, bodyRock, bounceY, breatheY, happyFaceY, idleArmAngle, idleLegY]);
+  }, [CW, bodyRock, bounceY, breatheY, happyFaceY, idleLegY]);
 
   const hiWaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     hiWaveTimerRef.current = setTimeout(() => {
       if (isPeek) {
-        hiWave.value = 0;
         hiWaveBodyY.value = withSequence(
           withTiming(-CW * 0.018, { duration: 260, easing: Easing.out(Easing.cubic) }),
           withTiming(0, { duration: 340, easing: Easing.inOut(Easing.sin) }),
@@ -292,19 +270,6 @@ export const WenwenBase: React.FC<WenwenProps> = ({
         );
         return;
       }
-
-      hiWave.value = withSequence(
-        withTiming(0.42, { duration: 320, easing: Easing.out(Easing.cubic) }),
-        withRepeat(
-          withSequence(
-            withTiming(0.14, { duration: 190, easing: Easing.inOut(Easing.sin) }),
-            withTiming(0.42, { duration: 190, easing: Easing.inOut(Easing.sin) })
-          ),
-          3,
-          false
-        ),
-        withTiming(0, { duration: 380, easing: Easing.out(Easing.cubic) })
-      );
 
       hiWaveBodyY.value = withSequence(
         withTiming(-CW * 0.018, { duration: 320, easing: Easing.out(Easing.cubic) }),
@@ -323,7 +288,7 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     return () => {
       if (hiWaveTimerRef.current) clearTimeout(hiWaveTimerRef.current);
     };
-  }, [CW, hiWave, hiWaveBodyY, isPeek, squashY, stretchX]);
+  }, [CW, hiWaveBodyY, isPeek, squashY, stretchX]);
 
   const tvTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -365,18 +330,6 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     { translateY: -CY },
   ]);
 
-  const lArmT = useDerivedValue(() => [
-    { translateX: L_ARM_CX },
-    { translateY: L_ARM_CY },
-    { rotate: 0.22 + lArmAngle.value + idleArmAngle.value * 0.55 },
-  ]);
-
-  const rArmT = useDerivedValue(() => [
-    { translateX: R_ARM_CX },
-    { translateY: R_ARM_CY },
-    { rotate: -0.22 + rArmAngle.value - idleArmAngle.value * 0.55 - hiWave.value * (isPeek ? 0 : 0.58) },
-  ]);
-
   const lLegT = useDerivedValue(() => [{ translateX: L_FPX }, { translateY: L_FPY + idleLegY.value }]);
   const rLegT = useDerivedValue(() => [{ translateX: R_FPX }, { translateY: R_FPY + idleLegY.value }]);
   const faceT = useDerivedValue(() => [{ translateY: happyFaceY.value }]);
@@ -393,27 +346,11 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   });
 
   const panGesture = Gesture.Pan()
-    .onBegin((e) => {
-      const near = (ax: number, ay: number, r: number) =>
-        (e.x - ax) * (e.x - ax) + (e.y - ay) * (e.y - ay) < r * r;
-      if (near(L_ARM_CX, L_ARM_CY, ARM_TOUCH_RADIUS)) activeTarget.value = 1;
-      else if (near(R_ARM_CX, R_ARM_CY, ARM_TOUCH_RADIUS)) activeTarget.value = 2;
-      else activeTarget.value = 0;
-    })
     .onUpdate((e) => {
-      if (activeTarget.value === 1) {
-        lArmAngle.value = clamp(-Math.atan2(e.x - L_ARM_CX, e.y - L_ARM_CY), -0.5, 0.5);
-      } else if (activeTarget.value === 2) {
-        rArmAngle.value = clamp(-Math.atan2(e.x - R_ARM_CX, e.y - R_ARM_CY), -0.5, 0.5);
-      } else {
-        bodyTilt.value = withSpring(clamp(((e.x - CX) / CX) * 0.14, -0.14, 0.14));
-      }
+      bodyTilt.value = withSpring(clamp(((e.x - CX) / CX) * 0.14, -0.14, 0.14));
     })
     .onEnd(() => {
-      lArmAngle.value = withSpring(0.0);
-      rArmAngle.value = withSpring(0.0);
       bodyTilt.value = withSpring(0);
-      activeTarget.value = 0;
     });
 
   const gesture = Gesture.Simultaneous(tapGesture, panGesture);
@@ -426,31 +363,6 @@ export const WenwenBase: React.FC<WenwenProps> = ({
             <Path path={bodyPath} color="rgba(0,0,0,0.15)" transform={[{ translateY: 25 }]}> 
               <BlurMask blur={35} style="normal" />
             </Path>
-
-            <Group transform={lArmT}>
-              <Oval x={-ARM_W / 2} y={-ARM_H / 2} width={ARM_W} height={ARM_H} color={bodyColor}>
-                <LinearGradient start={vec(-ARM_W * 0.32, -ARM_H / 2)} end={vec(ARM_W * 0.3, ARM_H / 2)} colors={[bodyHighlight, bodyColor, bodyShadow]} />
-              </Oval>
-              <RoundedRect x={-ARM_W * 0.34} y={-ARM_H * 0.04} width={ARM_W * 0.36} height={ARM_H * 0.1} r={ARM_H * 0.05} color={eyeColor}>
-                <BlurMask blur={4} style="normal" />
-              </RoundedRect>
-            </Group>
-
-            <Group transform={rArmT}>
-              <Oval x={-ARM_W / 2} y={-ARM_H / 2} width={ARM_W} height={ARM_H} color={bodyColor}>
-                <LinearGradient start={vec(-ARM_W * 0.35, -ARM_H / 2)} end={vec(ARM_W * 0.35, ARM_H / 2)} colors={[bodyHighlight, bodyColor, bodyShadow]} />
-              </Oval>
-              <RoundedRect x={ARM_W * 0.02} y={-ARM_H * 0.04} width={ARM_W * 0.36} height={ARM_H * 0.1} r={ARM_H * 0.05} color={eyeColor}>
-                <BlurMask blur={4} style="normal" />
-              </RoundedRect>
-            </Group>
-
-            <RoundedRect x={CX - BODY_W * 0.54} y={CY - BODY_H * 0.05} width={BODY_W * 0.055} height={BODY_H * 0.25} r={BODY_W * 0.027} color={eyeColor}>
-              <BlurMask blur={8} style="normal" />
-            </RoundedRect>
-            <RoundedRect x={CX + BODY_W * 0.485} y={CY - BODY_H * 0.05} width={BODY_W * 0.055} height={BODY_H * 0.25} r={BODY_W * 0.027} color={eyeColor}>
-              <BlurMask blur={8} style="normal" />
-            </RoundedRect>
 
             <Group transform={lLegT}>
               <RoundedRect x={-FOOT_W / 2} y={-FOOT_H / 2} width={FOOT_W} height={FOOT_H} r={FOOT_H * 0.46} color={bodyColor}>

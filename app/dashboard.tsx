@@ -2,7 +2,6 @@ import React, { ComponentType, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,6 +31,7 @@ import { useTaskStore } from '@/src/store/task-store';
 import { WELLNESS_CATEGORIES, type SuggestedTask, type WellnessCategory } from '@/src/types/ai-task';
 import { useAppTheme } from '@/src/theme/app-theme';
 import { getTimeGreeting } from '@/src/utils/greeting';
+import { loadSkiaWebIfNeeded } from '@/src/utils/load-skia-web';
 import { getDailyQuote } from '@/src/utils/quotes';
 
 const TASK_COMPLETION_COOLDOWN_MS = 10_000;
@@ -118,13 +118,7 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     const load = async () => {
-      if (Platform.OS === 'web') {
-        const { LoadSkiaWeb } = await import('@shopify/react-native-skia/lib/commonjs/web/LoadSkiaWeb');
-        await (LoadSkiaWeb as Function)({
-          locateFile: (file: string) =>
-            `https://cdn.jsdelivr.net/npm/canvaskit-wasm@0.40.0/bin/full/${file}`,
-        });
-      }
+      await loadSkiaWebIfNeeded();
 
       const [botMod, catMod] = await Promise.all([
         import('@/components/WenwenBase'),
@@ -193,11 +187,11 @@ export default function DashboardScreen() {
   const shouldShowHomeGuide =
     !homeGuide.dismissed && (!homeGuide.visitedJournal || !homeGuide.visitedCompanion);
 
-  const handleCreateTask = (title: string, detail: string, isRoutine: boolean) => {
+  const handleCreateTask = (title: string, detail: string, isRoutine: boolean, due: string) => {
     addTask({
       title,
       detail,
-      due: 'Today',
+      due,
       isRoutine,
     });
     setIsTaskModalOpen(false);
@@ -209,25 +203,25 @@ export default function DashboardScreen() {
       return;
     }
 
-    router.push(target === 'journal' ? '/journal' : '/companion');
+    router.replace(target === 'journal' ? '/journal' : '/companion');
   };
 
   const handleTabPress = (tab: DashboardTabKey) => {
     if (tab === 'home') return;
     if (tab === 'customize') {
-      router.push('/main');
+      router.replace('/main');
       return;
     }
     if (tab === 'journal') {
-      router.push('/journal');
+      router.replace('/journal');
       return;
     }
     if (tab === 'settings') {
-      router.push('/settings');
+      router.replace('/settings');
       return;
     }
     if (tab === 'companion') {
-      router.push('/companion');
+      router.replace('/companion');
       return;
     }
     router.push('/modal');
@@ -329,10 +323,12 @@ export default function DashboardScreen() {
             </Text>
             <Text style={[styles.heroSubtitle, { color: theme.muted }]}>{progressLabel}</Text>
           </View>
-          <View style={[styles.heroMark, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
-            <Text style={[styles.heroMarkText, { color: theme.primaryStrong }]}>
-              {selectedPersona === 'cat' ? 'C' : 'W'}
-            </Text>
+          <View
+            accessibilityRole="image"
+            accessibilityLabel="User profile"
+            style={[styles.heroMark, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}
+          >
+            <Ionicons name="person-outline" size={23} color={theme.primaryStrong} />
           </View>
         </View>
 
@@ -761,10 +757,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  heroMarkText: {
-    fontSize: 20,
-    fontWeight: '900',
+    marginTop: 26,
   },
   topCards: {
     gap: 12,

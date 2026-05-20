@@ -1,50 +1,59 @@
-# Welcome to your Expo app 👋
+# Wenwen
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Wenwen is an Expo / React Native wellness companion app focused on small daily tasks, journaling, and companion chat.
 
-## Get started
+## Local Setup
 
-1. Install dependencies
+1. Install dependencies.
 
    ```bash
    npm install
    ```
 
-2. Start the app
+2. Create a local environment file if you want AI features.
+
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Add a Gemini key to `.env`.
+
+   ```bash
+   EXPO_PUBLIC_GEMINI_API_KEY=your_key_here
+   ```
+
+4. Start Expo.
 
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Useful Commands
 
 ```bash
-npm run reset-project
+npm run lint
+npx tsc --noEmit
+npx expo start -c
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Security Notes
 
-## Learn more
+- `.env` is intentionally ignored by git. Do not commit API keys.
+- `EXPO_PUBLIC_GEMINI_API_KEY` is public in a client app. For production, move Gemini calls behind a backend proxy before shipping to users.
+- Journal, task, and companion data are currently local-first and stored with AsyncStorage. This is convenient for MVP work, but it is not encrypted storage.
+- Avoid placing medical, financial, legal, or highly sensitive data in local app storage until a stronger privacy model is implemented.
 
-To learn more about developing your project with Expo, look at the following resources:
+## Project Structure
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```text
+app/                 Expo Router screens
+components/          Skia persona components and shared UI
+src/components/      App-specific reusable components
+src/services/        AI, notification, and review services
+src/store/           Zustand stores
+src/theme/           Shared app theme tokens
+src/types/           Shared TypeScript types
+src/utils/           Date and input helpers
+docs/                Project documentation
+specify/             Product constitution / source-of-truth docs
+```

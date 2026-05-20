@@ -13,6 +13,7 @@ import { router } from 'expo-router';
 
 import { usePreferencesStore } from '@/src/store/preferences-store';
 import { useAppTheme } from '@/src/theme/app-theme';
+import { INPUT_LIMITS } from '@/src/utils/input-limits';
 
 export default function LoginScreen() {
   const theme = useAppTheme();
@@ -77,6 +78,7 @@ export default function LoginScreen() {
               placeholder="What should Wenwen call you?"
               placeholderTextColor={theme.subtle}
               autoCapitalize="words"
+              maxLength={INPUT_LIMITS.displayName}
               value={name}
               onChangeText={setName}
               returnKeyType="done"
@@ -87,11 +89,19 @@ export default function LoginScreen() {
           <View style={[styles.summaryCard, { backgroundColor: theme.softSurface, borderColor: theme.border }]}>
             <View style={styles.summaryRow}>
               <Ionicons name="checkmark-circle-outline" size={18} color={theme.primaryStrong} />
-              <Text style={[styles.summaryText, { color: theme.muted }]}>Tasks and progress stay on this device.</Text>
+              <Text style={[styles.summaryText, { color: theme.muted }]}>Tasks help you choose one action for today.</Text>
             </View>
             <View style={styles.summaryRow}>
               <Ionicons name="create-outline" size={18} color={theme.primaryStrong} />
-              <Text style={[styles.summaryText, { color: theme.muted }]}>Journal and chat history are organized by day.</Text>
+              <Text style={[styles.summaryText, { color: theme.muted }]}>Journal keeps daily notes and memories organized.</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.primaryStrong} />
+              <Text style={[styles.summaryText, { color: theme.muted }]}>Companion helps sort thoughts into a next step.</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Ionicons name="shield-checkmark-outline" size={18} color={theme.primaryStrong} />
+              <Text style={[styles.summaryText, { color: theme.muted }]}>Data stays local unless an AI feature needs context.</Text>
             </View>
           </View>
 
