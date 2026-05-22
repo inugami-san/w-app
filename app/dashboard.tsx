@@ -19,6 +19,7 @@ import { ProgressBar } from '@/src/components/home/ProgressBar';
 import { QuoteCard } from '@/src/components/home/QuoteCard';
 import { TaskComposer } from '@/src/components/home/TaskComposer';
 import { TaskList } from '@/src/components/home/TaskList';
+import { V11HomeInsights } from '@/src/components/home/V11HomeInsights';
 import { WeeklyProgressCard } from '@/src/components/home/WeeklyProgressCard';
 import { generateGeminiTaskSuggestions } from '@/src/services/gemini-task-suggestions';
 import {
@@ -349,6 +350,8 @@ export default function DashboardScreen() {
           <ProgressBar completed={completedCount} total={totalCount} />
           <WeeklyProgressCard />
         </View>
+
+        <V11HomeInsights />
 
         <QuoteCard quote={quote} />
 

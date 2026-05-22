@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
+import { MemoryTimelineCard } from '@/src/components/settings/MemoryTimelineCard';
 import { REMINDER_TIME_OPTIONS, syncGentleReminder } from '@/src/services/gentle-reminders';
 import { NIGHTLY_REVIEW_TIME, syncNightlyReviewNotification } from '@/src/services/nightly-review-notifications';
 import { useCompanionStore } from '@/src/store/companion-store';
@@ -639,6 +640,8 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <MemoryTimelineCard />
+
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.dataRow}>
             <View style={[styles.dataIcon, { backgroundColor: theme.primarySoft }]}>
@@ -647,7 +650,7 @@ export default function SettingsScreen() {
             <View style={styles.optionTextWrap}>
               <Text style={[styles.cardTitle, { color: theme.textStrong }]}>AI transparency</Text>
               <Text style={[styles.cardCaption, { color: theme.muted }]}>
-                AI suggestions may send task titles, journal text, attached image data, companion messages, and selected memory context when needed. Wenwen uses local fallback responses when AI fails.
+                AI suggestions may send task titles, journal text, attached image data, voice recordings used for transcription, companion messages, and selected memory context when needed. Wenwen uses local fallback responses when AI fails.
               </Text>
             </View>
           </View>

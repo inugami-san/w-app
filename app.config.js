@@ -1,17 +1,24 @@
 export default {
-  name: 'wenwen-app',
+  name: 'Wenwen',
   slug: 'wenwen-app',
-  version: '1.0.0',
+  version: '1.1.0',
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   scheme: 'wenwenapp',
   userInterfaceStyle: 'light',
   newArchEnabled: true,
+  updates: {
+    url: 'https://u.expo.dev/da47e4d2-6af8-4751-a972-60656bde75eb',
+  },
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
   ios: {
     supportsTablet: true,
     bundleIdentifier: "com.christianjariol.wapp"
   },
   android: {
+    package: 'com.christianjariol.wapp',
     adaptiveIcon: {
       backgroundColor: '#F8F5EF',
       foregroundImage: './assets/images/android-icon-foreground.png',
@@ -35,9 +42,8 @@ export default {
     [
       'expo-splash-screen',
       {
-        image: './assets/images/splash-icon.png',
-        imageWidth: 280,
-        resizeMode: 'contain',
+        image: './assets/images/wenwen-splash-head.png',
+        imageWidth: 220,
         backgroundColor: '#F8F5EF',
       },
     ],
@@ -45,6 +51,13 @@ export default {
       'expo-image-picker',
       {
         photosPermission: 'Wenwen lets you attach a photo to your journal when you choose one.',
+      },
+    ],
+    [
+      'expo-audio',
+      {
+        microphonePermission: 'Wenwen lets you record voice check-ins when you choose to use them.',
+        recordAudioAndroid: true,
       },
     ],
     'expo-sqlite',

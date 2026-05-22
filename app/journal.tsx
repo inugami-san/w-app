@@ -3,7 +3,9 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,9 +20,12 @@ import { router } from 'expo-router';
 
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
 import { getMoodLabel } from '@/src/features/journal/moods';
+import { useVoiceCheckInRecorder } from '@/src/hooks/use-voice-check-in-recorder';
 import { generateJournalSummary } from '@/src/services/gemini-journal-summary';
+import { transcribeVoiceCheckIn } from '@/src/services/gemini-voice';
 import { scheduleJournalSummaryNotification } from '@/src/services/journal-notifications';
 import { getJournalImageForGemini } from '@/src/services/journal-image';
+import { useKeyboardState } from '@/src/hooks/use-keyboard-state';
 import { useJournalStore } from '@/src/store/journal-store';
 import { usePreferencesStore } from '@/src/store/preferences-store';
 import { useTaskStore } from '@/src/store/task-store';
@@ -125,12 +130,15 @@ export default function JournalScreen() {
   const [journalImage, setJournalImage] = useState<JournalImageAttachment | null>(null);
   const [journalImageBase64, setJournalImageBase64] = useState('');
   const [isSavingJournal, setIsSavingJournal] = useState(false);
+  const [isTranscribingVoice, setIsTranscribingVoice] = useState(false);
   const [reviewDateKey, setReviewDateKey] = useState('');
   const [isReviewModalVisible, setIsReviewModalVisible] = useState(false);
   const [isReviewLoading, setIsReviewLoading] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<JournalSummary | null>(null);
   const [reviewError, setReviewError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const { isVisible: isKeyboardVisible } = useKeyboardState();
+  const voiceRecorder = useVoiceCheckInRecorder();
   const historyDateKeys = useMemo(() => {
     return Object.keys(entries)
       .filter((dateKey) => hasHistoryContent(entries[dateKey], dateKey, today))
@@ -258,6 +266,45 @@ export default function JournalScreen() {
     setJournalImageBase64('');
   };
 
+  const handleToggleVoiceJournal = async () => {
+    if (isSavingJournal || isTranscribingVoice) return;
+
+    try {
+      if (!voiceRecorder.isRecording) {
+        await voiceRecorder.startRecording();
+        return;
+      }
+
+      setIsTranscribingVoice(true);
+      const uri = await voiceRecorder.stopRecording();
+      if (!uri) {
+        throw new Error('No voice recording was saved.');
+      }
+
+      const transcription = await transcribeVoiceCheckIn(
+        { uri, mode: 'journal' },
+        {
+          onError: () => undefined,
+        }
+      );
+
+      if (!transcription) {
+        Alert.alert('Voice not added', 'Wenwen could not read that voice note clearly.');
+        return;
+      }
+
+      setJournalNote((current) => {
+        const separator = current.trim() ? '\n\n' : '';
+        return clampText(`${current}${separator}${transcription}`, INPUT_LIMITS.journalNote);
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to record voice right now.';
+      Alert.alert('Voice check-in failed', message);
+    } finally {
+      setIsTranscribingVoice(false);
+    }
+  };
+
   const openReviewForDate = useCallback(
     async (dateKey: string) => {
       const entry = useJournalStore.getState().entries[dateKey];
@@ -376,7 +423,12 @@ export default function JournalScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={[styles.screenTitle, { color: theme.subtle }]}>Journal</Text>
         <Text style={[styles.heroTitle, { color: theme.text }]}>Daily history</Text>
         <Text style={[styles.heroSubtitle, { color: theme.muted }]}>
@@ -514,7 +566,12 @@ export default function JournalScreen() {
         visible={isJournalModalVisible}
         onRequestClose={() => setIsJournalModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+          style={styles.modalKeyboardAvoidingView}
+        >
+        <View style={[styles.modalOverlay, isKeyboardVisible && styles.modalOverlayKeyboard]}>
           <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
             <View style={styles.modalHeader}>
               <View>
@@ -531,9 +588,13 @@ export default function JournalScreen() {
               </Pressable>
             </View>
             <ScrollView
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.composerScrollContent}
+              contentContainerStyle={[
+                styles.composerScrollContent,
+                isKeyboardVisible && styles.composerScrollContentKeyboard,
+              ]}
             >
               <Text style={[styles.modalBody, { color: theme.muted }]}>
                 Write freely. No format required.
@@ -582,6 +643,45 @@ export default function JournalScreen() {
                 )}
               </View>
 
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={voiceRecorder.isRecording ? 'Stop voice journal recording' : 'Record voice journal note'}
+                onPress={handleToggleVoiceJournal}
+                disabled={isSavingJournal || isTranscribingVoice || voiceRecorder.isPreparing}
+                style={[
+                  styles.voiceButton,
+                  {
+                    backgroundColor: voiceRecorder.isRecording ? theme.primarySoft : theme.softSurface,
+                    borderColor: voiceRecorder.isRecording ? theme.primary : theme.softBorder,
+                  },
+                  (isSavingJournal || isTranscribingVoice || voiceRecorder.isPreparing) && styles.voiceButtonDisabled,
+                ]}
+              >
+                <View style={[styles.voiceButtonIcon, { backgroundColor: theme.primarySoft }]}>
+                  {isTranscribingVoice || voiceRecorder.isPreparing ? (
+                    <ActivityIndicator color={theme.primaryStrong} />
+                  ) : (
+                    <Ionicons
+                      name={voiceRecorder.isRecording ? 'stop-circle-outline' : 'mic-outline'}
+                      size={18}
+                      color={theme.primaryStrong}
+                    />
+                  )}
+                </View>
+                <View style={styles.voiceButtonTextWrap}>
+                  <Text style={[styles.voiceButtonTitle, { color: theme.textStrong }]}>
+                    {isTranscribingVoice
+                      ? 'Transcribing voice note'
+                      : voiceRecorder.isRecording
+                        ? `Stop recording (${Math.floor(voiceRecorder.durationMillis / 1000)}s)`
+                        : 'Record voice note'}
+                  </Text>
+                  <Text style={[styles.voiceButtonBody, { color: theme.muted }]}>
+                    Speak freely. Wenwen will add the text into this journal.
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
               <TextInput
                 value={journalNote}
                 onChangeText={setJournalNote}
@@ -618,6 +718,7 @@ export default function JournalScreen() {
             </ScrollView>
           </View>
         </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -720,9 +821,11 @@ export default function JournalScreen() {
         </View>
       </Modal>
 
-      <View style={styles.bottomTabWrap}>
-        <BottomTabPlaceholder activeKey="journal" onTabPress={handleTabPress} />
-      </View>
+      {!isKeyboardVisible && (
+        <View style={styles.bottomTabWrap}>
+          <BottomTabPlaceholder activeKey="journal" onTabPress={handleTabPress} />
+        </View>
+      )}
     </View>
   );
 }
@@ -891,6 +994,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 20,
   },
+  modalKeyboardAvoidingView: {
+    flex: 1,
+  },
+  modalOverlayKeyboard: {
+    justifyContent: 'flex-end',
+  },
   modalCard: {
     maxHeight: '88%',
     borderRadius: 24,
@@ -937,6 +1046,9 @@ const styles = StyleSheet.create({
   },
   composerScrollContent: {
     paddingBottom: 2,
+  },
+  composerScrollContentKeyboard: {
+    paddingBottom: 18,
   },
   imageAttachCard: {
     borderRadius: 18,
@@ -998,6 +1110,39 @@ const styles = StyleSheet.create({
     color: '#C33B3B',
     fontSize: 11,
     fontWeight: '900',
+  },
+  voiceButton: {
+    minHeight: 76,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginTop: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  voiceButtonDisabled: {
+    opacity: 0.72,
+  },
+  voiceButtonIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceButtonTextWrap: {
+    flex: 1,
+  },
+  voiceButtonTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  voiceButtonBody: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+    marginTop: 3,
   },
   promptSection: {
     marginTop: 14,

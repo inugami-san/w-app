@@ -77,6 +77,7 @@ export default function JournalDateScreen() {
   const journalImage = entry?.image;
   const dailyContextLabels = getDailyContextLabels(entry?.dailyContext);
   const feelingScoreLabel = getFeelingScoreLabel(entry?.feelingScale?.score);
+  const hasExistingSummary = Boolean(entry?.summaries.length);
 
   const taskSnapshot: JournalTaskSnapshot[] = useMemo(() => {
     if (dateKey === today) return [];
@@ -84,6 +85,13 @@ export default function JournalDateScreen() {
   }, [dateKey, entry?.tasks, today]);
 
   const completedCount = taskSnapshot.filter((task) => task.done).length;
+  const hasReviewableContent =
+    taskSnapshot.length > 0 ||
+    note.trim().length > 0 ||
+    Boolean(journalImage) ||
+    dailyContextLabels.length > 0 ||
+    Boolean(feelingScoreLabel);
+  const isSummaryButtonDisabled = isSummarizing || hasExistingSummary || !hasReviewableContent;
 
   const handleTabPress = (tab: DashboardTabKey) => {
     if (tab === 'journal') {
@@ -115,6 +123,11 @@ export default function JournalDateScreen() {
 
   const handleGenerateSummary = async () => {
     if (isSummarizing) return;
+    if (hasExistingSummary) {
+      Alert.alert('Review already exists', 'This day already has a Wenwen note.');
+      return;
+    }
+    if (!hasReviewableContent) return;
 
     setIsSummarizing(true);
     try {
@@ -255,20 +268,17 @@ export default function JournalDateScreen() {
               <Text style={[styles.secondaryButtonText, { color: theme.muted }]}>Save Note</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.primaryButton, { backgroundColor: theme.primary }]}
+              style={[
+                styles.primaryButton,
+                { backgroundColor: theme.primary },
+                isSummaryButtonDisabled && { backgroundColor: theme.softBorder },
+              ]}
               onPress={handleGenerateSummary}
-              disabled={
-                isSummarizing ||
-                (taskSnapshot.length === 0 &&
-                  note.trim().length === 0 &&
-                  !journalImage &&
-                  dailyContextLabels.length === 0 &&
-                  !feelingScoreLabel)
-              }
+              disabled={isSummaryButtonDisabled}
             >
-              <Ionicons name="sparkles-outline" size={16} color="#FFFFFF" />
+              <Ionicons name={hasExistingSummary ? 'checkmark-circle-outline' : 'sparkles-outline'} size={16} color="#FFFFFF" />
               <Text style={styles.primaryButtonText}>
-                {isSummarizing ? 'Writing...' : 'Summarize'}
+                {hasExistingSummary ? 'Reviewed' : isSummarizing ? 'Writing...' : 'Summarize'}
               </Text>
             </TouchableOpacity>
           </View>

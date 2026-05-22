@@ -27,6 +27,7 @@ import {
 } from '@/src/services/nightly-review-notifications';
 import {
   buildWellnessReviewSource,
+  createFallbackWellnessReview,
   getCompletedReviewPeriod,
   hasWellnessReviewActivity,
 } from '@/src/services/wellness-review';
@@ -41,6 +42,23 @@ import type { WellnessReviewPeriod, WellnessReviewSummary } from '@/src/types/we
 export const unstable_settings = {
   initialRouteName: 'index',
 };
+
+const WELLNESS_REVIEW_TIMEOUT_MS = 8000;
+
+function generateWellnessReviewSafely(source: ReturnType<typeof buildWellnessReviewSource>) {
+  const fallback = createFallbackWellnessReview(source);
+
+  return new Promise<ReturnType<typeof createFallbackWellnessReview>>((resolve) => {
+    const timeoutId = setTimeout(() => {
+      resolve(fallback);
+    }, WELLNESS_REVIEW_TIMEOUT_MS);
+
+    generateWellnessReview(source)
+      .then(resolve)
+      .catch(() => resolve(fallback))
+      .finally(() => clearTimeout(timeoutId));
+  });
+}
 
 export default function RootLayout() {
   const themeMode = usePreferencesStore((state) => state.themeMode);
@@ -240,7 +258,7 @@ export default function RootLayout() {
     setIsWellnessReviewLoading(true);
     let isCurrent = true;
 
-    generateWellnessReview(source)
+    generateWellnessReviewSafely(source)
       .then((reviewInput) => {
         if (!isCurrent) return;
         const review = addWellnessReview(reviewInput);

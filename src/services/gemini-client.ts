@@ -8,14 +8,17 @@ const MAX_GEMINI_PROMPT_CHARS = 18000;
 
 export type GeminiErrorCallback = (error: Error) => void;
 
-export type GeminiInlineImage = {
+export type GeminiInlineData = {
   mimeType: string;
   data: string;
 };
 
+export type GeminiInlineImage = GeminiInlineData;
+
 type GeminiRequestOptions<T> = {
   prompt: string;
-  images?: GeminiInlineImage[];
+  images?: GeminiInlineData[];
+  inlineData?: GeminiInlineData[];
   fallback: T;
   parse: (text: string) => T;
   generationConfig?: Record<string, unknown>;
@@ -67,6 +70,7 @@ function getGeminiApiKey() {
 export async function requestGeminiWithFallback<T>({
   prompt,
   images = [],
+  inlineData = [],
   fallback,
   parse,
   generationConfig,
@@ -84,6 +88,7 @@ export async function requestGeminiWithFallback<T>({
 
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
+  const mediaParts = [...images, ...inlineData];
 
   try {
     const response = await fetch(GEMINI_ENDPOINT, {
@@ -99,10 +104,10 @@ export async function requestGeminiWithFallback<T>({
             role: 'user',
             parts: [
               { text: limitPromptSize(prompt) },
-              ...images.map((image) => ({
+              ...mediaParts.map((item) => ({
                 inline_data: {
-                  mime_type: image.mimeType,
-                  data: image.data,
+                  mime_type: item.mimeType,
+                  data: item.data,
                 },
               })),
             ],

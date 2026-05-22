@@ -21,9 +21,12 @@ import { router } from 'expo-router';
 
 import type { WenwenProps } from '@/components/WenwenBase';
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
+import { useKeyboardState } from '@/src/hooks/use-keyboard-state';
+import { useVoiceCheckInRecorder } from '@/src/hooks/use-voice-check-in-recorder';
 import { buildCompanionMemoryContext } from '@/src/services/companion-memory';
 import { generateCompanionReply } from '@/src/services/gemini-companion-chat';
 import { generateCompanionSummary } from '@/src/services/gemini-companion-summary';
+import { transcribeVoiceCheckIn } from '@/src/services/gemini-voice';
 import {
   COMPANION_WELCOME_TEXT,
   createCompanionMessage,
@@ -142,6 +145,7 @@ export default function CompanionScreen() {
     useState<Record<AvatarPersona, ComponentType<WenwenProps>> | null>(null);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isTranscribingVoice, setIsTranscribingVoice] = useState(false);
   const [reviewDateKey, setReviewDateKey] = useState('');
   const [isReviewModalVisible, setIsReviewModalVisible] = useState(false);
   const [isReviewLoading, setIsReviewLoading] = useState(false);
@@ -149,13 +153,17 @@ export default function CompanionScreen() {
   const [reviewError, setReviewError] = useState('');
   const chatScrollRef = useRef<ScrollView | null>(null);
   const inputRef = useRef<TextInput | null>(null);
+  const { isVisible: isKeyboardVisible } = useKeyboardState();
+  const voiceRecorder = useVoiceCheckInRecorder();
   const avatarScale = useRef(new Animated.Value(1)).current;
   const avatarTranslateY = useRef(new Animated.Value(0)).current;
   const avatarRotate = useRef(new Animated.Value(0)).current;
   const avatarGlow = useRef(new Animated.Value(0)).current;
   const lastAnimatedMessageIdRef = useRef('');
-  const canSend = input.trim().length > 0 && !isSending;
-  const chatPanelHeight = Math.min(Math.max(windowHeight * 0.46, 360), 520);
+  const canSend = input.trim().length > 0 && !isSending && !isTranscribingVoice;
+  const chatPanelHeight = isKeyboardVisible
+    ? Math.min(Math.max(windowHeight * 0.34, 280), 390)
+    : Math.min(Math.max(windowHeight * 0.46, 360), 520);
   const webInputReset = Platform.OS === 'web' ? ({ outlineStyle: 'none' } as unknown as TextStyle) : null;
   const selectedPersona = avatarPersona ?? DEFAULT_AVATAR_PERSONA;
   const AvatarComponent = avatarComponents?.[selectedPersona] ?? null;
@@ -388,14 +396,16 @@ export default function CompanionScreen() {
     [addSummary]
   );
 
-  const handleSend = async () => {
-    const cleanInput = clampText(input, INPUT_LIMITS.companionMessage).trim();
+  const sendMessageText = async (rawText: string, shouldClearInput = false) => {
+    const cleanInput = clampText(rawText, INPUT_LIMITS.companionMessage).trim();
     if (!cleanInput || isSending) return;
 
     const userMessage = createCompanionMessage('user', cleanInput);
     const nextMessages = [...messages, userMessage];
     addMessage(today, userMessage);
-    setInput('');
+    if (shouldClearInput) {
+      setInput('');
+    }
     setIsSending(true);
 
     try {
@@ -413,6 +423,46 @@ export default function CompanionScreen() {
     }
   };
 
+  const handleSend = async () => {
+    await sendMessageText(input, true);
+  };
+
+  const handleToggleVoiceMessage = async () => {
+    if (isSending || isTranscribingVoice || voiceRecorder.isPreparing) return;
+
+    try {
+      if (!voiceRecorder.isRecording) {
+        await voiceRecorder.startRecording();
+        return;
+      }
+
+      setIsTranscribingVoice(true);
+      const uri = await voiceRecorder.stopRecording();
+      if (!uri) {
+        throw new Error('No voice recording was saved.');
+      }
+
+      const transcription = await transcribeVoiceCheckIn(
+        { uri, mode: 'companion' },
+        {
+          onError: () => undefined,
+        }
+      );
+
+      if (!transcription) {
+        Alert.alert('Voice not sent', 'Wenwen could not read that voice message clearly.');
+        return;
+      }
+
+      await sendMessageText(transcription);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to record voice right now.';
+      Alert.alert('Voice message failed', message);
+    } finally {
+      setIsTranscribingVoice(false);
+    }
+  };
+
   const handleFocusComposer = () => {
     chatScrollRef.current?.scrollToEnd({ animated: true });
     inputRef.current?.focus();
@@ -421,9 +471,18 @@ export default function CompanionScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.root, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
     >
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          isKeyboardVisible && styles.scrollContentKeyboard,
+        ]}
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={[styles.screenTitle, { color: theme.subtle }]}>Companion</Text>
         <Text style={[styles.heroTitle, { color: theme.text }]}>Talk with Wenwen</Text>
         <Text style={[styles.heroSubtitle, { color: theme.muted }]}>
@@ -505,6 +564,8 @@ export default function CompanionScreen() {
             ref={chatScrollRef}
             style={styles.chatScroll}
             contentContainerStyle={styles.messageList}
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
             {messages.map((message) => {
@@ -555,6 +616,30 @@ export default function CompanionScreen() {
               multiline
               style={[styles.input, { color: theme.text }, webInputReset]}
             />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={voiceRecorder.isRecording ? 'Stop voice message recording' : 'Record voice message'}
+              disabled={isSending || isTranscribingVoice || voiceRecorder.isPreparing}
+              onPress={handleToggleVoiceMessage}
+              style={[
+                styles.voiceComposerButton,
+                {
+                  backgroundColor: voiceRecorder.isRecording ? theme.primarySoft : theme.softSurface,
+                  borderColor: voiceRecorder.isRecording ? theme.primary : theme.softBorder,
+                },
+                (isSending || isTranscribingVoice || voiceRecorder.isPreparing) && styles.voiceComposerButtonDisabled,
+              ]}
+            >
+              {isTranscribingVoice || voiceRecorder.isPreparing ? (
+                <ActivityIndicator color={theme.primaryStrong} />
+              ) : (
+                <Ionicons
+                  name={voiceRecorder.isRecording ? 'stop-circle-outline' : 'mic-outline'}
+                  size={16}
+                  color={theme.primaryStrong}
+                />
+              )}
+            </Pressable>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Send message"
@@ -704,9 +789,11 @@ export default function CompanionScreen() {
         </View>
       </Modal>
 
-      <View style={styles.bottomTabWrap}>
-        <BottomTabPlaceholder activeKey="companion" onTabPress={handleTabPress} />
-      </View>
+      {!isKeyboardVisible && (
+        <View style={styles.bottomTabWrap}>
+          <BottomTabPlaceholder activeKey="companion" onTabPress={handleTabPress} />
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -719,6 +806,9 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingHorizontal: 20,
     paddingBottom: 124,
+  },
+  scrollContentKeyboard: {
+    paddingBottom: 36,
   },
   screenTitle: {
     fontSize: 14,
@@ -1025,6 +1115,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     paddingVertical: 8,
     textAlignVertical: 'top',
+  },
+  voiceComposerButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceComposerButtonDisabled: {
+    opacity: 0.65,
   },
   sendButton: {
     width: 38,

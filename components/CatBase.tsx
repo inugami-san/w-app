@@ -7,7 +7,6 @@ import {
   LinearGradient,
   Oval,
   Path,
-  RoundedRect,
   Skia,
   vec,
 } from '@shopify/react-native-skia';

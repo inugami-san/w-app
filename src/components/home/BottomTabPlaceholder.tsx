@@ -15,7 +15,7 @@ type TabItem = {
 const TABS: TabItem[] = [
   { key: 'home', label: 'Home', icon: 'home-outline' },
   { key: 'customize', label: 'Customize', icon: 'sparkles-outline' },
-  { key: 'journal', label: 'Journal', icon: 'create-outline' },
+  { key: 'journal', label: 'Journal', icon: 'add' },
   { key: 'companion', label: 'Companion', icon: 'chatbubble-ellipses-outline' },
   { key: 'settings', label: 'Settings', icon: 'settings-outline' },
 ];
@@ -34,6 +34,7 @@ type BottomTabButtonProps = {
 
 function BottomTabButton({ tab, isActive, onPress, theme }: BottomTabButtonProps) {
   const reducedMotion = usePreferencesStore((state) => state.reducedMotion);
+  const isCreateAction = tab.key === 'journal';
   const activeProgress = useRef(new Animated.Value(isActive ? 1 : 0)).current;
   const pressScale = useRef(new Animated.Value(1)).current;
 
@@ -91,22 +92,29 @@ function BottomTabButton({ tab, isActive, onPress, theme }: BottomTabButtonProps
       onPress={() => onPress?.(tab.key)}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      style={({ pressed }) => [styles.tab, pressed && styles.tabPressed]}
+      style={({ pressed }) => [
+        styles.tab,
+        isCreateAction && styles.createTab,
+        pressed && styles.tabPressed,
+      ]}
     >
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.activePill,
-          {
-            backgroundColor: theme.activeSurface,
-            opacity: activeProgress,
-            transform: [{ scale: reducedMotion ? 1 : activeScale }],
-          },
-        ]}
-      />
+      {!isCreateAction && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.activePill,
+            {
+              backgroundColor: theme.activeSurface,
+              opacity: activeProgress,
+              transform: [{ scale: reducedMotion ? 1 : activeScale }],
+            },
+          ]}
+        />
+      )}
       <Animated.View
         style={[
           styles.tabContent,
+          isCreateAction && styles.createContent,
           {
             transform: [
               { translateY: reducedMotion ? 0 : contentLift },
@@ -115,16 +123,36 @@ function BottomTabButton({ tab, isActive, onPress, theme }: BottomTabButtonProps
           },
         ]}
       >
-        <Ionicons
-          name={tab.icon as keyof typeof Ionicons.glyphMap}
-          size={18}
-          color={isActive ? theme.primaryStrong : theme.subtle}
-        />
+        {isCreateAction ? (
+          <View
+            style={[
+              styles.createButton,
+              {
+                backgroundColor: isActive ? theme.primarySoft : theme.surface,
+                borderColor: theme.surface,
+                shadowColor: theme.shadow,
+              },
+            ]}
+          >
+            <Ionicons
+              name={tab.icon as keyof typeof Ionicons.glyphMap}
+              size={25}
+              color={theme.primaryStrong}
+            />
+          </View>
+        ) : (
+          <Ionicons
+            name={tab.icon as keyof typeof Ionicons.glyphMap}
+            size={18}
+            color={isActive ? theme.primaryStrong : theme.subtle}
+          />
+        )}
         <Text
           style={[
             styles.label,
             { color: theme.subtle },
             isActive && { color: theme.primaryStrong },
+            isCreateAction && styles.createLabel,
           ]}
         >
           {tab.label}
@@ -170,8 +198,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderRadius: 28,
     borderWidth: 1,
-    paddingHorizontal: 7,
-    paddingVertical: 7,
+    paddingHorizontal: 6,
+    paddingTop: 9,
+    paddingBottom: 8,
     marginTop: 14,
     elevation: 8,
     shadowOpacity: 0.1,
@@ -180,12 +209,15 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    minHeight: 48,
-    borderRadius: 22,
+    minHeight: 52,
+    borderRadius: 24,
     overflow: 'hidden',
     position: 'relative',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  createTab: {
+    overflow: 'visible',
   },
   tabPressed: {
     opacity: 0.9,
@@ -196,15 +228,34 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    borderRadius: 22,
+    borderRadius: 24,
   },
   tabContent: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
   },
+  createContent: {
+    gap: 1,
+  },
+  createButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -15,
+    elevation: 10,
+    shadowOpacity: 0.14,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+  },
   label: {
-    fontSize: 10,
-    fontWeight: '900',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  createLabel: {
+    marginTop: 0,
   },
 });
