@@ -22,6 +22,7 @@ export default function LoginScreen() {
   const savedName = usePreferencesStore((state) => state.displayName);
   const completeOnboarding = usePreferencesStore((state) => state.completeOnboarding);
   const [name, setName] = useState(savedName);
+  const [aiContextEnabled, setAiContextEnabled] = useState(false);
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -36,7 +37,7 @@ export default function LoginScreen() {
 
   const handleStart = () => {
     const cleanName = name.trim() || 'Friend';
-    completeOnboarding(cleanName);
+    completeOnboarding(cleanName, aiContextEnabled);
     router.replace('/dashboard');
   };
 
@@ -101,9 +102,39 @@ export default function LoginScreen() {
             </View>
             <View style={styles.summaryRow}>
               <Ionicons name="shield-checkmark-outline" size={18} color={theme.primaryStrong} />
-              <Text style={[styles.summaryText, { color: theme.muted }]}>Data stays local unless an AI feature needs context.</Text>
+              <Text style={[styles.summaryText, { color: theme.muted }]}>Data stays local unless you allow AI context below.</Text>
             </View>
           </View>
+
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityLabel="Allow AI to use app context"
+            accessibilityState={{ checked: aiContextEnabled }}
+            onPress={() => setAiContextEnabled((value) => !value)}
+            style={({ pressed }) => [
+              styles.privacyCard,
+              { backgroundColor: theme.surface, borderColor: aiContextEnabled ? theme.primary : theme.softBorder },
+              pressed && styles.primaryButtonPressed,
+            ]}
+          >
+            <View
+              style={[
+                styles.checkbox,
+                {
+                  backgroundColor: aiContextEnabled ? theme.primary : theme.surface,
+                  borderColor: aiContextEnabled ? theme.primary : theme.softBorder,
+                },
+              ]}
+            >
+              {aiContextEnabled && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+            </View>
+            <View style={styles.privacyTextWrap}>
+              <Text style={[styles.privacyTitle, { color: theme.text }]}>Allow AI context</Text>
+              <Text style={[styles.privacyBody, { color: theme.muted }]}>
+                Wenwen can use task titles, journal notes, companion chats, journal photos, and saved places for better suggestions and summaries.
+              </Text>
+            </View>
+          </Pressable>
 
           <Pressable
             accessibilityRole="button"
@@ -196,6 +227,37 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     fontWeight: '600',
+  },
+  privacyCard: {
+    minHeight: 88,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  privacyTextWrap: {
+    flex: 1,
+  },
+  privacyTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  privacyBody: {
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 18,
+    marginTop: 4,
   },
   primaryButton: {
     minHeight: 52,

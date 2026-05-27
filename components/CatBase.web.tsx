@@ -43,6 +43,7 @@ export const CatBase: React.FC<WenwenProps> = ({
   faceColor = '#E9EFEA',
   bodyColor = '#F7F3EC',
   presentation = 'full',
+  isAsleep = false,
 }) => {
   const isPeek = presentation === 'peek';
   const isShowcase = presentation === 'showcase';
@@ -73,14 +74,23 @@ export const CatBase: React.FC<WenwenProps> = ({
           ]}
         >
           <View style={[styles.headGlow, { backgroundColor: bodyHighlight }]} />
-          <View style={[styles.eyeWrap, styles.leftEyeWrap]}>
-            <View style={[styles.pupil, { backgroundColor: eyeColor }]} />
-            <View style={styles.eyeSpark} />
-          </View>
-          <View style={[styles.eyeWrap, styles.rightEyeWrap]}>
-            <View style={[styles.pupil, { backgroundColor: eyeColor }]} />
-            <View style={styles.eyeSpark} />
-          </View>
+          {isAsleep ? (
+            <>
+              <View style={[styles.sleepEye, styles.leftSleepEye, { borderBottomColor: lineColor }]} />
+              <View style={[styles.sleepEye, styles.rightSleepEye, { borderBottomColor: lineColor }]} />
+            </>
+          ) : (
+            <>
+              <View style={[styles.eyeWrap, styles.leftEyeWrap]}>
+                <View style={[styles.pupil, { backgroundColor: eyeColor }]} />
+                <View style={styles.eyeSpark} />
+              </View>
+              <View style={[styles.eyeWrap, styles.rightEyeWrap]}>
+                <View style={[styles.pupil, { backgroundColor: eyeColor }]} />
+                <View style={styles.eyeSpark} />
+              </View>
+            </>
+          )}
           <View style={[styles.muzzle, { backgroundColor: muzzleColor }]}>
             <View style={[styles.nose, { borderBottomColor: eyeColor }]} />
             <View style={[styles.mouth, { borderBottomColor: lineColor }]} />
@@ -198,6 +208,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: 'rgba(30,41,59,0.1)',
+  },
+  sleepEye: {
+    position: 'absolute',
+    top: '40%',
+    width: '17%',
+    height: '10%',
+    borderBottomWidth: 3,
+    borderRadius: 999,
+  },
+  leftSleepEye: {
+    left: '27%',
+  },
+  rightSleepEye: {
+    right: '27%',
   },
   leftEyeWrap: {
     left: '29%',

@@ -6,6 +6,7 @@ export interface WenwenProps {
   faceColor?: string;
   bodyColor?: string;
   presentation?: 'full' | 'peek' | 'showcase';
+  isAsleep?: boolean;
 }
 
 function parseHexColor(color: string) {
@@ -48,6 +49,7 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   faceColor = '#E9EFEA',
   bodyColor = '#F7F3EC',
   presentation = 'full',
+  isAsleep = false,
 }) => {
   const isPeek = presentation === 'peek';
   const isShowcase = presentation === 'showcase';
@@ -75,11 +77,20 @@ export const WenwenBase: React.FC<WenwenProps> = ({
           <View style={[styles.screenBezel, { backgroundColor: screenBorder }]}>
             <View style={[styles.screen, { backgroundColor: screenColor }]}>
               <View style={[styles.screenGloss, { backgroundColor: 'rgba(255,255,255,0.16)' }]} />
-              <View style={[styles.glow, styles.leftGlow, { backgroundColor: eyeColor }]} />
-              <View style={[styles.glow, styles.rightGlow, { backgroundColor: eyeColor }]} />
-              <View style={[styles.eye, styles.leftEye, { backgroundColor: eyeColor }]} />
-              <View style={[styles.eye, styles.rightEye, { backgroundColor: eyeColor }]} />
-              <View style={[styles.smile, { borderBottomColor: eyeColor }]} />
+              {isAsleep ? (
+                <>
+                  <View style={[styles.sleepEye, styles.leftSleepEye, { borderBottomColor: eyeColor }]} />
+                  <View style={[styles.sleepEye, styles.rightSleepEye, { borderBottomColor: eyeColor }]} />
+                </>
+              ) : (
+                <>
+                  <View style={[styles.glow, styles.leftGlow, { backgroundColor: eyeColor }]} />
+                  <View style={[styles.glow, styles.rightGlow, { backgroundColor: eyeColor }]} />
+                  <View style={[styles.eye, styles.leftEye, { backgroundColor: eyeColor }]} />
+                  <View style={[styles.eye, styles.rightEye, { backgroundColor: eyeColor }]} />
+                  <View style={[styles.smile, { borderBottomColor: eyeColor }]} />
+                </>
+              )}
             </View>
           </View>
         </View>
@@ -195,6 +206,21 @@ const styles = StyleSheet.create({
     width: '10%',
     height: '42%',
     borderRadius: 999,
+  },
+  sleepEye: {
+    position: 'absolute',
+    top: '46%',
+    width: '16%',
+    height: '13%',
+    borderBottomWidth: 4,
+    borderRadius: 999,
+    opacity: 0.85,
+  },
+  leftSleepEye: {
+    left: '29%',
+  },
+  rightSleepEye: {
+    right: '29%',
   },
   leftEye: {
     left: '28%',

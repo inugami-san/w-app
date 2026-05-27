@@ -25,11 +25,18 @@ export type WellnessReviewCompanionInput = {
   messages: CompanionMessage[];
 };
 
+export type WellnessReviewMovementInput = {
+  stepCount: number | null;
+  locationCount: number;
+  locationLabels: string[];
+};
+
 export type WellnessReviewSource = {
   period: WellnessReviewPeriod;
   tasks: JournalTaskSnapshot[];
   journals: WellnessReviewJournalInput[];
   companionDays: WellnessReviewCompanionInput[];
+  movement: WellnessReviewMovementInput;
 };
 
 export type WellnessReviewSummary = {
@@ -42,4 +49,6 @@ export type WellnessReviewSummary = {
   completedTaskCount: number;
   journalCount: number;
   companionMessageCount: number;
+  stepCount?: number | null;
+  locationCount?: number;
 };

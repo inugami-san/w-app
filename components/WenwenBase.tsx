@@ -28,6 +28,7 @@ export interface WenwenProps {
   faceColor?: string;
   bodyColor?: string;
   presentation?: 'full' | 'peek' | 'showcase';
+  isAsleep?: boolean;
 }
 
 function parseHexColor(color: string) {
@@ -90,6 +91,7 @@ export const WenwenBase: React.FC<WenwenProps> = ({
   faceColor = '#E9EFEA',
   bodyColor = '#F7F3EC',
   presentation = 'full',
+  isAsleep = false,
 }) => {
   const [size, setSize] = useState(() => {
     const { width, height } = Dimensions.get('window');
@@ -195,6 +197,20 @@ export const WenwenBase: React.FC<WenwenProps> = ({
     p.quadTo(CX, y + FACE_H * 0.1, CX + FACE_W * 0.1, y);
     return p;
   }, [CX, EYE_Y, FACE_H, FACE_W]);
+
+  const leftSleepEyePath = useMemo(() => {
+    const p = Skia.Path.Make();
+    p.moveTo(L_EYE_X - EYE_W * 0.7, EYE_Y);
+    p.quadTo(L_EYE_X, EYE_Y + EYE_H * 0.22, L_EYE_X + EYE_W * 0.7, EYE_Y);
+    return p;
+  }, [EYE_H, EYE_W, EYE_Y, L_EYE_X]);
+
+  const rightSleepEyePath = useMemo(() => {
+    const p = Skia.Path.Make();
+    p.moveTo(R_EYE_X - EYE_W * 0.7, EYE_Y);
+    p.quadTo(R_EYE_X, EYE_Y + EYE_H * 0.22, R_EYE_X + EYE_W * 0.7, EYE_Y);
+    return p;
+  }, [EYE_H, EYE_W, EYE_Y, R_EYE_X]);
 
   const tvClipPath = useMemo(() => {
     return makeRoundedRectPath(TV_X, TV_Y, TV_W, TV_H, TV_R);
@@ -423,25 +439,38 @@ export const WenwenBase: React.FC<WenwenProps> = ({
                 <BlurMask blur={9} style="normal" />
               </RoundedRect>
 
-              <Group>
+              <Group opacity={isAsleep ? 0.34 : 1}>
                 <Oval x={L_BLUSH_X - BLUSH_RX} y={BLUSH_Y - BLUSH_RY} width={BLUSH_RX * 2} height={BLUSH_RY * 2} color={eyeColor}>
                   <BlurMask blur={7} style="normal" />
                 </Oval>
                 <Oval x={R_BLUSH_X - BLUSH_RX} y={BLUSH_Y - BLUSH_RY} width={BLUSH_RX * 2} height={BLUSH_RY * 2} color={eyeColor}>
                   <BlurMask blur={7} style="normal" />
                 </Oval>
-                <RoundedRect x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} r={EYE_W / 2} color={eyeColor}>
-                  <BlurMask blur={8} style="normal" />
-                </RoundedRect>
-                <RoundedRect x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} r={EYE_W / 2} color={eyeColor}>
-                  <BlurMask blur={8} style="normal" />
-                </RoundedRect>
-                <RoundedRect x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} r={EYE_W / 2} color={featureGlow} />
-                <RoundedRect x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} r={EYE_W / 2} color={featureGlow} />
-                <Path path={faceBridgePath} color={eyeColor} style="stroke" strokeWidth={EYE_W * 0.34} strokeCap="round">
-                  <BlurMask blur={5} style="normal" />
-                </Path>
-                <Path path={faceBridgePath} color={featureGlow} style="stroke" strokeWidth={EYE_W * 0.22} strokeCap="round" />
+                {isAsleep ? (
+                  <>
+                    <Path path={leftSleepEyePath} color={eyeColor} style="stroke" strokeWidth={EYE_W * 0.5} strokeCap="round">
+                      <BlurMask blur={5} style="normal" />
+                    </Path>
+                    <Path path={rightSleepEyePath} color={eyeColor} style="stroke" strokeWidth={EYE_W * 0.5} strokeCap="round">
+                      <BlurMask blur={5} style="normal" />
+                    </Path>
+                  </>
+                ) : (
+                  <>
+                    <RoundedRect x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} r={EYE_W / 2} color={eyeColor}>
+                      <BlurMask blur={8} style="normal" />
+                    </RoundedRect>
+                    <RoundedRect x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} r={EYE_W / 2} color={eyeColor}>
+                      <BlurMask blur={8} style="normal" />
+                    </RoundedRect>
+                    <RoundedRect x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} r={EYE_W / 2} color={featureGlow} />
+                    <RoundedRect x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} r={EYE_W / 2} color={featureGlow} />
+                    <Path path={faceBridgePath} color={eyeColor} style="stroke" strokeWidth={EYE_W * 0.34} strokeCap="round">
+                      <BlurMask blur={5} style="normal" />
+                    </Path>
+                    <Path path={faceBridgePath} color={featureGlow} style="stroke" strokeWidth={EYE_W * 0.22} strokeCap="round" />
+                  </>
+                )}
               </Group>
 
               <Group opacity={tvOverlay} clip={tvClipPath}>

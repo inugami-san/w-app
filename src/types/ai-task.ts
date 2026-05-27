@@ -16,4 +16,6 @@ export type SuggestedTask = {
   optional_detail: string;
   datetime_added: string;
   isRoutine?: boolean;
+  energy?: 'tiny' | 'medium' | 'heavy';
+  reason?: string;
 };

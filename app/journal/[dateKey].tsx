@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -14,13 +13,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
+import { GlowBalancePill } from '@/src/components/rewards/GlowBalancePill';
 import { getMoodLabel } from '@/src/features/journal/moods';
-import { generateJournalSummary } from '@/src/services/gemini-journal-summary';
-import { scheduleJournalSummaryNotification } from '@/src/services/journal-notifications';
-import { getJournalImageForGemini } from '@/src/services/journal-image';
 import { useJournalStore } from '@/src/store/journal-store';
 import { useAppTheme } from '@/src/theme/app-theme';
-import type { JournalDailyContext, JournalSummary, JournalTaskSnapshot } from '@/src/types/journal';
+import type { JournalDailyContext, JournalTaskSnapshot } from '@/src/types/journal';
 import { getLocalDateKey } from '@/src/utils/date';
 
 function getParam(value: string | string[] | undefined, fallback: string): string {
@@ -60,24 +57,17 @@ function getFeelingScoreLabel(score: number | null | undefined) {
 }
 
 export default function JournalDateScreen() {
-  const params = useLocalSearchParams<{ dateKey?: string | string[]; summaryId?: string | string[] }>();
+  const params = useLocalSearchParams<{ dateKey?: string | string[] }>();
   const today = useMemo(() => getLocalDateKey(), []);
   const dateKey = getParam(params.dateKey, today);
   const entry = useJournalStore((state) => state.entries[dateKey]);
   const setFeelingNote = useJournalStore((state) => state.setFeelingNote);
-  const addSummary = useJournalStore((state) => state.addSummary);
   const theme = useAppTheme();
   const [note, setNote] = useState(entry?.feelingNote ?? '');
-  const [isSummarizing, setIsSummarizing] = useState(false);
-  const initialSummaryId = getParam(params.summaryId, '');
-  const [activeSummary, setActiveSummary] = useState<JournalSummary | null>(
-    entry?.summaries.find((summary) => summary.id === initialSummaryId) ?? entry?.summaries[0] ?? null
-  );
   const moodLabel = getMoodLabel(entry?.mood);
   const journalImage = entry?.image;
   const dailyContextLabels = getDailyContextLabels(entry?.dailyContext);
   const feelingScoreLabel = getFeelingScoreLabel(entry?.feelingScale?.score);
-  const hasExistingSummary = Boolean(entry?.summaries.length);
 
   const taskSnapshot: JournalTaskSnapshot[] = useMemo(() => {
     if (dateKey === today) return [];
@@ -91,7 +81,17 @@ export default function JournalDateScreen() {
     Boolean(journalImage) ||
     dailyContextLabels.length > 0 ||
     Boolean(feelingScoreLabel);
-  const isSummaryButtonDisabled = isSummarizing || hasExistingSummary || !hasReviewableContent;
+  const heroMetaParts = [
+    taskSnapshot.length > 0
+      ? `${completedCount}/${taskSnapshot.length} tasks finished`
+      : hasReviewableContent || moodLabel
+        ? 'Journal note'
+        : 'No note yet',
+    feelingScoreLabel,
+    moodLabel,
+    journalImage ? 'Photo added' : '',
+    dailyContextLabels.length > 0 ? 'Context added' : '',
+  ].filter(Boolean);
 
   const handleTabPress = (tab: DashboardTabKey) => {
     if (tab === 'journal') {
@@ -106,8 +106,8 @@ export default function JournalDateScreen() {
       router.replace('/main');
       return;
     }
-    if (tab === 'settings') {
-      router.replace('/settings');
+    if (tab === 'profile') {
+      router.replace('/profile');
       return;
     }
     if (tab === 'companion') {
@@ -121,78 +121,27 @@ export default function JournalDateScreen() {
     setFeelingNote(dateKey, note);
   };
 
-  const handleGenerateSummary = async () => {
-    if (isSummarizing) return;
-    if (hasExistingSummary) {
-      Alert.alert('Review already exists', 'This day already has a Wenwen note.');
-      return;
-    }
-    if (!hasReviewableContent) return;
-
-    setIsSummarizing(true);
-    try {
-      const geminiImage = await getJournalImageForGemini(journalImage);
-      const result = await generateJournalSummary({
-        dateKey,
-        tasks: taskSnapshot,
-        feelingNote: note.trim(),
-        dailyContext: entry?.dailyContext,
-        feelingScore: entry?.feelingScale?.score,
-        image: geminiImage,
-        hasImage: Boolean(journalImage),
-        mood: entry?.mood,
-      });
-      const summary = addSummary({
-        dateKey,
-        title: result.title,
-        body: result.body,
-        tasks: taskSnapshot,
-        feelingNote: note.trim(),
-        dailyContext: entry?.dailyContext,
-        feelingScore: entry?.feelingScale?.score,
-        image: journalImage,
-        mood: entry?.mood,
-      });
-      setActiveSummary(summary);
-      await scheduleJournalSummaryNotification(summary);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to summarize this day.';
-      Alert.alert('Could not create note', message);
-    } finally {
-      setIsSummarizing(false);
-    }
-  };
-
   return (
     <View style={[styles.root, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back to journal history"
-          onPress={() => router.push('/journal')}
-          style={styles.backButton}
-        >
-          <Ionicons name="chevron-back" size={18} color={theme.primaryStrong} />
-          <Text style={[styles.backText, { color: theme.primaryStrong }]}>History</Text>
-        </Pressable>
+        <View style={styles.topRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to journal history"
+            onPress={() => router.push('/journal')}
+            style={styles.backButton}
+          >
+            <Ionicons name="chevron-back" size={18} color={theme.primaryStrong} />
+            <Text style={[styles.backText, { color: theme.primaryStrong }]}>History</Text>
+          </Pressable>
+          <GlowBalancePill />
+        </View>
 
         <Text style={[styles.screenTitle, { color: theme.subtle }]}>Journal</Text>
         <Text style={[styles.heroTitle, { color: theme.text }]}>{formatDateLabel(dateKey)}</Text>
         <Text style={[styles.heroSubtitle, { color: theme.muted }]}>
-          {taskSnapshot.length > 0 ? `${completedCount}/${taskSnapshot.length} tasks finished` : 'Journal note'}
-          {feelingScoreLabel ? ` · ${feelingScoreLabel}` : ''}
-          {moodLabel ? ` · ${moodLabel}` : ''}
-          {journalImage ? ' · Photo added' : ''}
-          {dailyContextLabels.length > 0 ? ' · Context added' : ''}
+          {heroMetaParts.join(' · ')}
         </Text>
-
-        {activeSummary && (
-          <View style={[styles.noteCard, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
-            <Text style={[styles.noteKicker, { color: theme.primaryStrong }]}>Wenwen Note</Text>
-            <Text style={[styles.noteTitle, { color: theme.text }]}>{activeSummary.title}</Text>
-            <Text style={[styles.noteBody, { color: theme.muted }]}>{activeSummary.body}</Text>
-          </View>
-        )}
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
           <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Tasks from this day</Text>
@@ -267,20 +216,6 @@ export default function JournalDateScreen() {
             <TouchableOpacity style={[styles.secondaryButton, { backgroundColor: theme.softSurface }]} onPress={handleSaveNote}>
               <Text style={[styles.secondaryButtonText, { color: theme.muted }]}>Save Note</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.primaryButton,
-                { backgroundColor: theme.primary },
-                isSummaryButtonDisabled && { backgroundColor: theme.softBorder },
-              ]}
-              onPress={handleGenerateSummary}
-              disabled={isSummaryButtonDisabled}
-            >
-              <Ionicons name={hasExistingSummary ? 'checkmark-circle-outline' : 'sparkles-outline'} size={16} color="#FFFFFF" />
-              <Text style={styles.primaryButtonText}>
-                {hasExistingSummary ? 'Reviewed' : isSummarizing ? 'Writing...' : 'Summarize'}
-              </Text>
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -301,11 +236,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 120,
   },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 14,
+    marginBottom: 12,
+  },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginBottom: 12,
   },
   backText: {
     fontSize: 13,

@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '@/src/theme/app-theme';
 import { usePreferencesStore } from '@/src/store/preferences-store';
 
-export type DashboardTabKey = 'home' | 'customize' | 'journal' | 'companion' | 'settings';
+export type DashboardTabKey = 'home' | 'customize' | 'journal' | 'companion' | 'profile';
 
 type TabItem = {
   key: DashboardTabKey;
@@ -17,7 +17,7 @@ const TABS: TabItem[] = [
   { key: 'customize', label: 'Customize', icon: 'sparkles-outline' },
   { key: 'journal', label: 'Journal', icon: 'add' },
   { key: 'companion', label: 'Companion', icon: 'chatbubble-ellipses-outline' },
-  { key: 'settings', label: 'Settings', icon: 'settings-outline' },
+  { key: 'profile', label: 'Profile', icon: 'person-circle-outline' },
 ];
 
 interface BottomTabPlaceholderProps {

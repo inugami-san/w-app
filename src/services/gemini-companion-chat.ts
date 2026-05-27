@@ -3,7 +3,8 @@ import { type GeminiErrorCallback, requestGeminiWithFallback } from '@/src/servi
 import { buildWenwenPrompt } from '@/src/services/wenwen-persona';
 import type { AvatarPersona } from '@/src/store/preferences-store';
 
-const CRISIS_PATTERN = /\b(kill myself|suicide|self harm|self-harm|hurt myself|end my life|want to die)\b/i;
+const CRISIS_PATTERN =
+  /\b(kill myself|suicide|suicidal|self harm|self-harm|hurt myself|harm myself|cut myself|end my life|want to die|wanna die|rather be dead|do not want to live|don't want to live|dont want to live|can't go on|cant go on|overdose|take all my pills)\b/i;
 
 function isCrisisMessage(text: string) {
   return CRISIS_PATTERN.test(text);

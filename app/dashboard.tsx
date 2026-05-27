@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 
 import type { WenwenProps } from '@/components/WenwenBase';
 import type { TaskItem } from '@/src/types/task';
@@ -18,19 +19,38 @@ import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/hom
 import { ProgressBar } from '@/src/components/home/ProgressBar';
 import { QuoteCard } from '@/src/components/home/QuoteCard';
 import { TaskComposer } from '@/src/components/home/TaskComposer';
+import { TaskCompletionCard } from '@/src/components/home/TaskCompletionCard';
 import { TaskList } from '@/src/components/home/TaskList';
 import { V11HomeInsights } from '@/src/components/home/V11HomeInsights';
 import { WeeklyProgressCard } from '@/src/components/home/WeeklyProgressCard';
+import { GlowBalancePill } from '@/src/components/rewards/GlowBalancePill';
+import { StepsSummaryCard } from '@/src/components/steps/StepsSummaryCard';
 import { generateGeminiTaskSuggestions } from '@/src/services/gemini-task-suggestions';
+import {
+  buildWellnessReviewSource,
+  getCompletedReviewPeriod,
+  hasWellnessReviewActivity,
+} from '@/src/services/wellness-review';
+import { useCompanionStore } from '@/src/store/companion-store';
 import {
   DEFAULT_AVATAR_COLORS,
   DEFAULT_AVATAR_PERSONA,
   type AvatarPersona,
   usePreferencesStore,
 } from '@/src/store/preferences-store';
+import { useJournalStore } from '@/src/store/journal-store';
+import {
+  PERSONA_CHARGE_COST,
+  PERSONA_CHARGE_HOURS,
+  REWARD_CURRENCY_NAME,
+  TASK_SUGGESTION_COST,
+  useRewardStore,
+} from '@/src/store/reward-store';
 import { useTaskStore } from '@/src/store/task-store';
+import { useWellnessReviewStore } from '@/src/store/wellness-review-store';
 import { WELLNESS_CATEGORIES, type SuggestedTask, type WellnessCategory } from '@/src/types/ai-task';
 import { useAppTheme } from '@/src/theme/app-theme';
+import { getLocalDateKey } from '@/src/utils/date';
 import { getTimeGreeting } from '@/src/utils/greeting';
 import { loadSkiaWebIfNeeded } from '@/src/utils/load-skia-web';
 import { getDailyQuote } from '@/src/utils/quotes';
@@ -45,6 +65,14 @@ function getParam(value: string | string[] | undefined, fallback: string): strin
 function getPersonaParam(value: string | string[] | undefined, fallback: AvatarPersona): AvatarPersona {
   const raw = getParam(value, fallback);
   return raw === 'cat' ? 'cat' : 'bot';
+}
+
+function getRecentDateKeys(days: number) {
+  return Array.from({ length: days }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - index);
+    return getLocalDateKey(date);
+  });
 }
 
 export default function DashboardScreen() {
@@ -71,6 +99,7 @@ export default function DashboardScreen() {
   const avatarPersona = usePreferencesStore((state) => state.avatarPersona);
   const setAvatarColors = usePreferencesStore((state) => state.setAvatarColors);
   const setAvatarPersona = usePreferencesStore((state) => state.setAvatarPersona);
+  const aiTaskContextEnabled = usePreferencesStore((state) => state.aiTaskContextEnabled);
   const paramEyeColor = getParam(params.eyeColor, '');
   const paramFaceColor = getParam(params.faceColor, '');
   const paramBodyColor = getParam(params.bodyColor, '');
@@ -98,6 +127,14 @@ export default function DashboardScreen() {
   const displayName = usePreferencesStore((state) => state.displayName);
   const homeGuide = usePreferencesStore((state) => state.homeGuide);
   const dismissHomeGuide = usePreferencesStore((state) => state.dismissHomeGuide);
+  const evaluationFrequency = useJournalStore((state) => state.evaluationFrequency);
+  const journalEntries = useJournalStore((state) => state.entries);
+  const companionEntries = useCompanionStore((state) => state.entries);
+  const lastShownWellnessPeriodKey = useWellnessReviewStore((state) => state.lastShownPeriodKey);
+  const requestReview = useWellnessReviewStore((state) => state.requestReview);
+  const hasActivePersonaCharge = useRewardStore((state) => state.hasActivePersonaCharge);
+  const personaChargeExpiresAt = useRewardStore((state) => state.personaChargeExpiresAt);
+  const spendEnergy = useRewardStore((state) => state.spendEnergy);
 
   useEffect(() => {
     if (!paramEyeColor && !paramFaceColor && !paramBodyColor && !hasParamPersona) return;
@@ -161,6 +198,14 @@ export default function DashboardScreen() {
   }, [completionCooldownUntil]);
 
   useEffect(() => {
+    const interval = setInterval(() => {
+      setClockNow(Date.now());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     if (!completionFeedback) return;
 
     const timeout = setTimeout(() => {
@@ -171,7 +216,37 @@ export default function DashboardScreen() {
   }, [completionFeedback]);
 
   const completedCount = useMemo(() => tasks.filter((item) => item.done).length, [tasks]);
+  const isPersonaCharged = useMemo(
+    () => {
+      const expiresAt = Date.parse(personaChargeExpiresAt);
+      return Number.isFinite(expiresAt) && expiresAt > clockNow;
+    },
+    [clockNow, personaChargeExpiresAt]
+  );
   const totalCount = tasks.length;
+  const routineCompletionCounts = useMemo(() => {
+    const today = getLocalDateKey();
+    const dateKeys = getRecentDateKeys(7);
+
+    return tasks.reduce<Record<string, number>>((counts, task) => {
+      if (!task.isRoutine) return counts;
+
+      counts[task.id] = dateKeys.reduce((total, dateKey) => {
+        if (dateKey === today) return total + (task.done ? 1 : 0);
+
+        const snapshot = journalEntries[dateKey]?.tasks ?? [];
+        const wasCompleted = snapshot.some(
+          (snapshotTask) =>
+            snapshotTask.done &&
+            (snapshotTask.id === task.id || snapshotTask.title.toLowerCase() === task.title.toLowerCase())
+        );
+
+        return total + (wasCompleted ? 1 : 0);
+      }, 0);
+
+      return counts;
+    }, {});
+  }, [journalEntries, tasks]);
   const completionCooldownRemaining = Math.max(
     0,
     Math.ceil((completionCooldownUntil - clockNow) / 1000)
@@ -179,6 +254,44 @@ export default function DashboardScreen() {
 
   const greeting = useMemo(() => getTimeGreeting(), []);
   const quote = useMemo(() => getDailyQuote(), []);
+  const todayDateKey = getLocalDateKey();
+  const reviewActivitySignature = useMemo(() => {
+    return JSON.stringify({
+      tasks: tasks.map((task) => `${task.id}:${task.updatedAt}:${task.done}`).join('|'),
+      journals: Object.values(journalEntries)
+        .map((entry) => `${entry.dateKey}:${entry.updatedAt}`)
+        .sort()
+        .join('|'),
+      companion: Object.values(companionEntries)
+        .map((entry) => `${entry.dateKey}:${entry.updatedAt}`)
+        .sort()
+        .join('|'),
+    });
+  }, [companionEntries, journalEntries, tasks]);
+  const pendingWellnessPeriod = useMemo(() => {
+    if (!reviewActivitySignature) return null;
+    const period = getCompletedReviewPeriod(evaluationFrequency, todayDateKey);
+    if (!period) return null;
+    if (period.key === lastShownWellnessPeriodKey) return null;
+
+    const source = buildWellnessReviewSource(period);
+    if (!hasWellnessReviewActivity(source)) return null;
+
+    return period;
+  }, [
+    evaluationFrequency,
+    lastShownWellnessPeriodKey,
+    reviewActivitySignature,
+    todayDateKey,
+  ]);
+  const todayJournalEntry = journalEntries[todayDateKey];
+  const hasReflectedToday = Boolean(
+    todayJournalEntry?.feelingNote.trim() ||
+      todayJournalEntry?.mood ||
+      todayJournalEntry?.feelingScale?.score !== undefined ||
+      todayJournalEntry?.image ||
+      todayJournalEntry?.summaries.length
+  );
   const progressLabel =
     totalCount === 0
       ? 'Start with one small task.'
@@ -187,6 +300,32 @@ export default function DashboardScreen() {
         : `${Math.max(totalCount - completedCount, 0)} task${totalCount - completedCount === 1 ? '' : 's'} left today.`;
   const shouldShowHomeGuide =
     !homeGuide.dismissed && (!homeGuide.visitedJournal || !homeGuide.visitedCompanion);
+  const dailyLoopSteps = [
+    {
+      key: 'task',
+      label: 'Pick one task',
+      done: totalCount > 0,
+      icon: 'checkmark-circle-outline',
+    },
+    {
+      key: 'complete',
+      label: 'Complete it',
+      done: completedCount > 0,
+      icon: 'footsteps-outline',
+    },
+    {
+      key: 'reflect',
+      label: 'Reflect',
+      done: hasReflectedToday,
+      icon: 'journal-outline',
+    },
+    {
+      key: 'energy',
+      label: 'Earn Energy',
+      done: completedCount > 0,
+      icon: 'flash-outline',
+    },
+  ];
 
   const handleCreateTask = (title: string, detail: string, isRoutine: boolean, due: string) => {
     addTask({
@@ -217,8 +356,8 @@ export default function DashboardScreen() {
       router.replace('/journal');
       return;
     }
-    if (tab === 'settings') {
-      router.replace('/settings');
+    if (tab === 'profile') {
+      router.replace('/profile');
       return;
     }
     if (tab === 'companion') {
@@ -243,9 +382,10 @@ export default function DashboardScreen() {
     }
 
     toggleTask(task.id);
-    setCompletionFeedback(`Done: ${task.title}`);
+    setCompletionFeedback(`Wenwen noticed the win: ${task.title}`);
     startCompletionCooldown(TASK_COMPLETION_COOLDOWN_MS);
     setClockNow(Date.now());
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
   };
 
   const handleConfirmDeleteTask = () => {
@@ -268,10 +408,28 @@ export default function DashboardScreen() {
 
   const handleGenerateSuggestion = async (category: WellnessCategory, focusText: string) => {
     if (isGeneratingSuggestion) return;
+    if (!hasActivePersonaCharge()) {
+      Alert.alert(
+        'Charge Wenwen first',
+        `Wenwen task suggestions need persona charge. Spend ${PERSONA_CHARGE_COST} ${REWARD_CURRENCY_NAME} for ${PERSONA_CHARGE_HOURS} hours from Companion.`
+      );
+      return;
+    }
+
+    if (useRewardStore.getState().glowBalance < TASK_SUGGESTION_COST) {
+      Alert.alert(
+        'Energy needed',
+        `Wenwen task suggestions cost ${TASK_SUGGESTION_COST} ${REWARD_CURRENCY_NAME}.`
+      );
+      return;
+    }
+
+    const didSpend = spendEnergy(TASK_SUGGESTION_COST);
+    if (!didSpend) return;
 
     setIsGeneratingSuggestion(true);
     try {
-      const existingTitles = tasks.map((task) => task.title);
+      const existingTitles = aiTaskContextEnabled ? tasks.map((task) => task.title) : [];
       const suggestions = await generateGeminiTaskSuggestions(category, existingTitles, { focusText });
       setSuggestedTasks(suggestions);
       setIsTaskModalOpen(false);
@@ -302,12 +460,18 @@ export default function DashboardScreen() {
         detail: task.optional_detail,
         due: 'Today',
         isRoutine: Boolean(task.isRoutine),
+        energy: task.energy ?? 'medium',
       });
     });
 
     setSuggestedTasks([]);
     setIsSuggestionReviewOpen(false);
     setIsTaskModalOpen(false);
+  };
+
+  const handleOpenPendingReview = () => {
+    if (!pendingWellnessPeriod) return;
+    requestReview(pendingWellnessPeriod.key);
   };
 
   return (
@@ -324,13 +488,7 @@ export default function DashboardScreen() {
             </Text>
             <Text style={[styles.heroSubtitle, { color: theme.muted }]}>{progressLabel}</Text>
           </View>
-          <View
-            accessibilityRole="image"
-            accessibilityLabel="User profile"
-            style={[styles.heroMark, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}
-          >
-            <Ionicons name="person-outline" size={23} color={theme.primaryStrong} />
-          </View>
+          <GlowBalancePill />
         </View>
 
         <View style={[styles.characterCard, { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow }]}>
@@ -341,14 +499,73 @@ export default function DashboardScreen() {
                 faceColor={faceColor}
                 bodyColor={bodyColor}
                 presentation="peek"
+                isAsleep={!isPersonaCharged}
               />
             )}
+          </View>
+        </View>
+
+        {pendingWellnessPeriod && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${pendingWellnessPeriod.title}`}
+            onPress={handleOpenPendingReview}
+            style={({ pressed }) => [
+              styles.pendingReviewCard,
+              { backgroundColor: theme.primarySoft, borderColor: theme.primary },
+              pressed && styles.pendingReviewCardPressed,
+            ]}
+          >
+            <View style={[styles.pendingReviewIcon, { backgroundColor: theme.primary }]}>
+              <Ionicons name="sparkles-outline" size={18} color="#FFFFFF" />
+            </View>
+            <View style={styles.pendingReviewTextWrap}>
+              <Text style={[styles.pendingReviewTitle, { color: theme.textStrong }]}>
+                {pendingWellnessPeriod.title}
+              </Text>
+              <Text style={[styles.pendingReviewBody, { color: theme.muted }]}>
+                Yesterday&apos;s activity is ready. Review it when Wenwen has energy.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.primaryStrong} />
+          </Pressable>
+        )}
+
+        <View style={[styles.dailyLoopCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.dailyLoopHeader}>
+            <Text style={[styles.dailyLoopTitle, { color: theme.textStrong }]}>Today&apos;s loop</Text>
+            <Text style={[styles.dailyLoopCaption, { color: theme.muted }]}>Small action, quick reflection, visible progress.</Text>
+          </View>
+          <View style={styles.dailyLoopSteps}>
+            {dailyLoopSteps.map((step) => (
+              <View key={step.key} style={styles.dailyLoopStep}>
+                <View
+                  style={[
+                    styles.dailyLoopIcon,
+                    {
+                      backgroundColor: step.done ? theme.primary : theme.softSurface,
+                      borderColor: step.done ? theme.primary : theme.softBorder,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={step.icon as keyof typeof Ionicons.glyphMap}
+                    size={15}
+                    color={step.done ? '#FFFFFF' : theme.primaryStrong}
+                  />
+                </View>
+                <Text style={[styles.dailyLoopStepText, { color: step.done ? theme.textStrong : theme.muted }]}>
+                  {step.label}
+                </Text>
+              </View>
+            ))}
           </View>
         </View>
 
         <View style={styles.topCards}>
           <ProgressBar completed={completedCount} total={totalCount} />
           <WeeklyProgressCard />
+          <StepsSummaryCard compact />
         </View>
 
         <V11HomeInsights />
@@ -461,6 +678,14 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
 
+        {hasHydrated && (
+          <TaskCompletionCard
+            tasks={tasks}
+            onOpenJournal={() => router.replace('/journal')}
+            onOpenCompanion={() => router.replace('/companion')}
+          />
+        )}
+
         <View style={styles.suggestRow}>
           <Text style={[styles.suggestText, { color: theme.muted }]}>Add your own task</Text>
           <TouchableOpacity
@@ -500,12 +725,15 @@ export default function DashboardScreen() {
             <Text style={[styles.loadingText, { color: theme.muted }]}>Loading tasks...</Text>
           </View>
         ) : (
-          <TaskList
-            tasks={tasks}
-            onToggleTask={handleToggleTask}
-            onRequestDeleteTask={handleRequestDeleteTask}
-            completionCooldownRemaining={completionCooldownRemaining}
-          />
+          <>
+            <TaskList
+              tasks={tasks}
+              onToggleTask={handleToggleTask}
+              onRequestDeleteTask={handleRequestDeleteTask}
+              completionCooldownRemaining={completionCooldownRemaining}
+              routineCompletionCounts={routineCompletionCounts}
+            />
+          </>
         )}
       </ScrollView>
 
@@ -618,6 +846,9 @@ export default function DashboardScreen() {
                       </TouchableOpacity>
                     </View>
                     <Text style={[styles.suggestionItemDetail, { color: theme.muted }]}>{task.optional_detail}</Text>
+                    <Text style={[styles.suggestionReason, { color: theme.muted }]}>
+                      {task.reason ?? 'Suggested because it is a small step for this focus.'}
+                    </Text>
                     <TouchableOpacity
                       accessibilityRole="checkbox"
                       accessibilityLabel={`${task.title} repeats daily`}
@@ -730,7 +961,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 16,
+    gap: 14,
     marginBottom: 18,
   },
   heroTextWrap: {
@@ -753,18 +984,52 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginTop: 6,
   },
-  heroMark: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 26,
-  },
   topCards: {
     gap: 12,
     marginBottom: 12,
+  },
+  dailyLoopCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 14,
+  },
+  dailyLoopHeader: {
+    marginBottom: 12,
+  },
+  dailyLoopTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  dailyLoopCaption: {
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  dailyLoopSteps: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dailyLoopStep: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 7,
+  },
+  dailyLoopIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dailyLoopStepText: {
+    minHeight: 28,
+    fontSize: 10,
+    fontWeight: '900',
+    lineHeight: 14,
+    textAlign: 'center',
   },
   guideCard: {
     borderRadius: 24,
@@ -853,6 +1118,39 @@ const styles = StyleSheet.create({
     height: 168,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  pendingReviewCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  pendingReviewCardPressed: {
+    opacity: 0.86,
+  },
+  pendingReviewIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingReviewTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  pendingReviewTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  pendingReviewBody: {
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 17,
+    marginTop: 2,
   },
   taskHeaderRow: {
     flexDirection: 'row',
@@ -1109,6 +1407,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
     lineHeight: 18,
+  },
+  suggestionReason: {
+    marginTop: 5,
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: '700',
   },
   suggestionRoutineRow: {
     marginTop: 8,

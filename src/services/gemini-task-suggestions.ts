@@ -28,6 +28,8 @@ const BASE_PROMPT = buildWenwenPrompt([
   '- Decide if each task is suitable as a daily routine.',
   '- Set is_routine to true only when repeating it daily is realistic, safe, and low-pressure.',
   '- Set is_routine to false for one-time planning, errands, cleanup, decisions, or tasks tied only to tomorrow.',
+  '- Set energy to "tiny", "medium", or "heavy". Prefer tiny or medium unless the task needs deeper focus.',
+  '- Add a short reason explaining why this task may help based on the category or focus.',
   '- Do not number the tasks.',
   '- Do not prefix titles with numbers, bullets, dashes, or labels.',
   '- Return only valid JSON.',
@@ -38,7 +40,9 @@ const BASE_PROMPT = buildWenwenPrompt([
   '    "title": "Drink Water",',
   '    "optional_detail": "Drink one glass of water to refresh your body.",',
   '    "datetime_added": "",',
-  '    "is_routine": true',
+  '    "is_routine": true,',
+  '    "energy": "tiny",',
+  '    "reason": "Hydration is a small reset that is easy to complete."',
   '  }',
   ']',
 ]);
@@ -77,13 +81,37 @@ function normalizeSuggestion(raw: unknown): SuggestedTask {
     typeof routineValue === 'boolean'
       ? routineValue
       : inferRoutineCandidate(title, optionalDetail);
+  const energy = normalizeEnergy(value.energy, title, optionalDetail);
+  const reason = cleanReason(value.reason, title);
 
   return {
     title,
     optional_detail: optionalDetail,
     datetime_added: datetimeAdded,
     isRoutine,
+    energy,
+    reason,
   };
+}
+
+function normalizeEnergy(value: unknown, title: string, detail = ''): SuggestedTask['energy'] {
+  const cleanValue = `${value ?? ''}`.trim().toLowerCase();
+  if (cleanValue === 'tiny' || cleanValue === 'medium' || cleanValue === 'heavy') return cleanValue;
+
+  const text = normalizeTitleForComparison(`${title} ${detail}`);
+  if (/\b(5|two|one|drink|breathe|water|stand|write one|text one)\b/.test(text)) return 'tiny';
+  if (/\b(plan|project|study|deep|clean|prepare|review)\b/.test(text)) return 'medium';
+  return 'medium';
+}
+
+function cleanReason(value: unknown, title: string) {
+  const reason = `${value ?? ''}`
+    .replace(/\s+/g, ' ')
+    .replace(/[<>]/g, '')
+    .trim()
+    .slice(0, 130);
+
+  return reason || `${title} is a small step that fits the selected focus.`;
 }
 
 function normalizeTitleForComparison(value: string): string {
@@ -262,11 +290,15 @@ function buildFocusTaskSuggestions(
       title: `${verb} ${subject} for 10 Minutes`,
       optional_detail: `Spend 10 minutes on ${subjectLower}, then stop at a clear point.`,
       isRoutine,
+      energy: 'medium',
+      reason: `This turns ${subjectLower} into a short, realistic focus block.`,
     },
     {
       title: `Write One Next Step for ${subject}`,
       optional_detail: `Write the next small action for ${subjectLower} before doing anything else.`,
       isRoutine: false,
+      energy: 'tiny',
+      reason: `A written next step makes ${subjectLower} easier to start.`,
     },
   ];
 }
@@ -342,6 +374,8 @@ function withTimestamp(task: Omit<SuggestedTask, 'datetime_added'>): SuggestedTa
   return {
     ...task,
     isRoutine: task.isRoutine ?? inferRoutineCandidate(task.title, task.optional_detail),
+    energy: normalizeEnergy(task.energy, task.title, task.optional_detail),
+    reason: cleanReason(task.reason, task.title),
     datetime_added: new Date().toISOString(),
   };
 }

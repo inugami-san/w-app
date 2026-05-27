@@ -26,6 +26,8 @@ export function WeeklyProgressCard() {
     const today = getLocalDateKey();
     const dateKeys = getRecentDateKeys(7);
     let completedTasks = 0;
+    let tinyDone = 0;
+    let heavyDone = 0;
     let journalDays = 0;
     let companionDays = 0;
     let activeDays = 0;
@@ -35,6 +37,10 @@ export function WeeklyProgressCard() {
       const companionEntry = companionEntries[dateKey];
       const taskSnapshot = dateKey === today ? tasks : journalEntry?.tasks ?? [];
       const dayCompletedTasks = taskSnapshot.filter((task) => task.done).length;
+      if (dateKey === today) {
+        tinyDone += tasks.filter((task) => task.done && task.energy === 'tiny').length;
+        heavyDone += tasks.filter((task) => task.done && task.energy === 'heavy').length;
+      }
       const hasJournal = Boolean(journalEntry?.feelingNote.trim() || journalEntry?.summaries.length);
       const hasCompanion = companionEntry?.messages.some((message) => message.role === 'user') ?? false;
 
@@ -44,19 +50,25 @@ export function WeeklyProgressCard() {
       activeDays += dayCompletedTasks > 0 || hasJournal || hasCompanion ? 1 : 0;
     });
 
+    const insight =
+      activeDays === 0
+        ? 'No pattern yet. One action today starts the record.'
+        : tinyDone > heavyDone
+          ? 'Smaller tasks are moving best today. Keep the next step light.'
+          : heavyDone > 0
+            ? 'You handled heavier tasks today. Leave room for recovery.'
+            : completedTasks >= 5
+              ? 'Tasks are your strongest signal this week.'
+              : journalDays + companionDays > completedTasks
+                ? 'Reflection is showing up more than task completion.'
+                : 'You have activity logged. Keep the next step small.';
+
     return {
       activeDays,
       completedTasks,
       journalDays,
       companionDays,
-      insight:
-        activeDays === 0
-          ? 'No pattern yet. One action today starts the record.'
-          : completedTasks >= 5
-            ? 'Tasks are your strongest signal this week.'
-            : journalDays + companionDays > completedTasks
-              ? 'Reflection is showing up more than task completion.'
-              : 'You have activity logged. Keep the next step small.',
+      insight,
     };
   }, [companionEntries, journalEntries, tasks]);
 

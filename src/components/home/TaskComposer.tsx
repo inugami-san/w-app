@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { WELLNESS_CATEGORIES, type SuggestedTask, type WellnessCategory } from '@/src/types/ai-task';
+import { REWARD_CURRENCY_NAME, TASK_SUGGESTION_COST } from '@/src/store/reward-store';
 import { useAppTheme } from '@/src/theme/app-theme';
 import { INPUT_LIMITS } from '@/src/utils/input-limits';
 
@@ -218,7 +219,7 @@ export function TaskComposer({
         <View style={styles.suggestionFooter}>
           <Text style={[styles.suggestionCount, { color: theme.muted }]}>
             {suggestedTasks.length === 0
-              ? 'AI uses your category, focus text, and existing task titles to avoid repeats.'
+              ? `Wenwen suggestions cost ${TASK_SUGGESTION_COST} ${REWARD_CURRENCY_NAME}.`
               : 'Suggestions are ready.'}
           </Text>
         </View>

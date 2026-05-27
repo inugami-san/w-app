@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { useRewardStore } from '@/src/store/reward-store';
 import type { CompanionChatSummary, CompanionDayEntry, CompanionMessage } from '@/src/types/companion';
 import { clampText, INPUT_LIMITS } from '@/src/utils/input-limits';
 
@@ -74,6 +75,10 @@ export const useCompanionStore = create<CompanionStore>()(
 
       addMessage: (dateKey, message) => {
         const nowIso = new Date().toISOString();
+        if (message.role === 'user' && message.text.trim()) {
+          useRewardStore.getState().awardCompanionChat(dateKey);
+        }
+
         set((state) => {
           const entry = ensureEntry(state.entries, dateKey);
           return {

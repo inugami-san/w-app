@@ -23,6 +23,12 @@ type JournalSummaryInput = {
   mood?: MoodKey;
 };
 
+type JournalSummaryPrivacyOptions = {
+  includeTasks?: boolean;
+  includeJournal?: boolean;
+  includeImages?: boolean;
+};
+
 function extractJsonObject(text: string): string {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
@@ -119,11 +125,25 @@ function createFallbackJournalSummary(input: {
 
 export async function generateJournalSummary(
   input: JournalSummaryInput,
-  options?: { onError?: GeminiErrorCallback }
+  options?: { onError?: GeminiErrorCallback; privacy?: JournalSummaryPrivacyOptions }
 ): Promise<JournalSummaryResult> {
-  const completed = input.tasks.filter((task) => task.done);
-  const unfinished = input.tasks.filter((task) => !task.done);
-  const contextText = formatDailyContext(input.dailyContext);
+  const includeTasks = options?.privacy?.includeTasks ?? true;
+  const includeJournal = options?.privacy?.includeJournal ?? true;
+  const includeImages = options?.privacy?.includeImages ?? true;
+
+  if (!includeJournal) {
+    return createFallbackJournalSummary(input);
+  }
+
+  const promptInput = {
+    ...input,
+    tasks: includeTasks ? input.tasks : [],
+    image: includeImages ? input.image : undefined,
+    hasImage: includeImages ? input.hasImage : false,
+  };
+  const completed = promptInput.tasks.filter((task) => task.done);
+  const unfinished = promptInput.tasks.filter((task) => !task.done);
+  const contextText = formatDailyContext(promptInput.dailyContext);
   const prompt = buildWenwenPrompt([
     'Task: Write a daily journal review for the user.',
     'Review rules:',
@@ -138,14 +158,14 @@ export async function generateJournalSummary(
     '- Use a clear title, not a sentimental title.',
     'Return only valid JSON with title and body.',
     '',
-    `Date: ${input.dateKey}`,
+    `Date: ${promptInput.dateKey}`,
     `Finished tasks: ${completed.map((task) => task.title).join(', ') || 'None yet'}`,
     `Unfinished tasks: ${unfinished.map((task) => task.title).join(', ') || 'None'}`,
-    `Mood check-in: ${getMoodLabel(input.mood) ?? 'Not selected'}`,
-    `Feeling rating: ${typeof input.feelingScore === 'number' ? `${input.feelingScore}/10` : 'Not selected'}`,
+    `Mood check-in: ${getMoodLabel(promptInput.mood) ?? 'Not selected'}`,
+    `Feeling rating: ${typeof promptInput.feelingScore === 'number' ? `${promptInput.feelingScore}/10` : 'Not selected'}`,
     `Daily context: ${contextText || 'Not recorded'}`,
-    `Image attached: ${input.hasImage || input.image ? 'Yes' : 'No'}`,
-    `User note: ${input.feelingNote || 'No note written'}`,
+    `Image attached: ${promptInput.hasImage || promptInput.image ? 'Yes' : 'No'}`,
+    `User note: ${promptInput.feelingNote || 'No note written'}`,
     '',
     'JSON Format:',
     '{ "title": "A clear title", "body": "One short paragraph, 3-5 sentences." }',
@@ -153,7 +173,7 @@ export async function generateJournalSummary(
 
   return requestGeminiWithFallback({
     prompt,
-    images: input.image ? [input.image] : [],
+    images: promptInput.image ? [promptInput.image] : [],
     fallback: createFallbackJournalSummary(input),
     onError: options?.onError,
     generationConfig: {

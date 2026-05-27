@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Alert,
   Image,
   KeyboardAvoidingView,
@@ -16,25 +17,28 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
+import { GlowBalancePill } from '@/src/components/rewards/GlowBalancePill';
 import { getMoodLabel } from '@/src/features/journal/moods';
 import { useVoiceCheckInRecorder } from '@/src/hooks/use-voice-check-in-recorder';
-import { generateJournalSummary } from '@/src/services/gemini-journal-summary';
 import { transcribeVoiceCheckIn } from '@/src/services/gemini-voice';
-import { scheduleJournalSummaryNotification } from '@/src/services/journal-notifications';
-import { getJournalImageForGemini } from '@/src/services/journal-image';
 import { useKeyboardState } from '@/src/hooks/use-keyboard-state';
 import { useJournalStore } from '@/src/store/journal-store';
 import { usePreferencesStore } from '@/src/store/preferences-store';
+import {
+  PERSONA_CHARGE_COST,
+  PERSONA_CHARGE_HOURS,
+  REWARD_CURRENCY_NAME,
+  useRewardStore,
+} from '@/src/store/reward-store';
 import { useTaskStore } from '@/src/store/task-store';
 import { useAppTheme } from '@/src/theme/app-theme';
 import type {
   JournalDailyContext,
   JournalEntry,
   JournalImageAttachment,
-  JournalSummary,
   JournalTaskSnapshot,
 } from '@/src/types/journal';
 import { getLocalDateKey } from '@/src/utils/date';
@@ -49,23 +53,8 @@ function formatDateLabel(dateKey: string) {
   });
 }
 
-function getPreviousDateKey(dateKey: string) {
-  const [year, month, day] = dateKey.split('-').map(Number);
-  const date = new Date(year, month - 1, day);
-  date.setDate(date.getDate() - 1);
-  return getLocalDateKey(date);
-}
-
 function hasDailyContext(context: JournalDailyContext | undefined) {
   return Boolean(context?.sleep || context?.outside || context?.movement);
-}
-
-function getDailyContextKey(context: JournalDailyContext | undefined) {
-  return JSON.stringify({
-    sleep: context?.sleep ?? '',
-    outside: Boolean(context?.outside),
-    movement: Boolean(context?.movement),
-  });
 }
 
 function getSleepContextLabel(sleep: JournalDailyContext['sleep']) {
@@ -90,21 +79,16 @@ function getFeelingScoreLabel(score: number | null | undefined) {
   return typeof score === 'number' ? `Feeling ${score}/10` : '';
 }
 
-function getJournalImageKey(image: JournalImageAttachment | undefined) {
-  return image?.uri ?? '';
-}
-
 function hasHistoryContent(entry: JournalEntry | undefined, dateKey: string, today: string) {
   if (!entry) return false;
   if (dateKey === today) return false;
 
   const hasNote = entry.feelingNote.trim().length > 0;
-  const hasSummary = entry.summaries.length > 0;
   const hasTaskSnapshot = entry.tasks.length > 0;
   const hasContext = hasDailyContext(entry.dailyContext);
   const hasFeelingScore = typeof entry.feelingScale?.score === 'number';
 
-  return hasNote || hasSummary || hasTaskSnapshot || hasContext || hasFeelingScore;
+  return hasNote || hasTaskSnapshot || hasContext || hasFeelingScore;
 }
 
 function getVisibleTasks(entry: JournalEntry | undefined, dateKey: string, today: string): JournalTaskSnapshot[] {
@@ -112,37 +96,208 @@ function getVisibleTasks(entry: JournalEntry | undefined, dateKey: string, today
   return entry.tasks;
 }
 
+const JOURNAL_THOUGHT_PROMPTS = [
+  'I kept thinking about...',
+  'Today felt like...',
+  'One thing I need is...',
+  'I noticed that...',
+  'Something I want to remember...',
+];
+
+function normalizeThoughtText(text: string) {
+  return text
+    .replace(/\s+/g, ' ')
+    .replace(/^[-*•\d.)\s]+/, '')
+    .trim();
+}
+
+function formatThoughtBubbleText(text: string) {
+  const clean = normalizeThoughtText(text);
+  if (!clean) return '';
+  return clean.length > 38 ? `${clean.slice(0, 35).trim()}...` : clean;
+}
+
+function getJournalThoughtBubbles(entries: Record<string, JournalEntry>, today: string) {
+  const previousDateKeys = Object.keys(entries)
+    .filter((dateKey) => dateKey !== today)
+    .sort((a, b) => b.localeCompare(a));
+  const snippets = previousDateKeys
+    .flatMap((dateKey) => {
+      const entry = entries[dateKey];
+      return [entry?.feelingNote];
+    })
+    .filter((value): value is string => Boolean(value?.trim()))
+    .flatMap((value) => value.split(/[\n.!?]+/))
+    .map(formatThoughtBubbleText)
+    .filter((part) => part.length >= 8);
+  const uniqueSnippets = snippets.filter(
+    (value, index, values) => values.findIndex((item) => item.toLowerCase() === value.toLowerCase()) === index
+  );
+
+  return (uniqueSnippets.length > 0 ? uniqueSnippets : JOURNAL_THOUGHT_PROMPTS).slice(0, 5);
+}
+
+type JournalThoughtBubblesProps = {
+  entries: Record<string, JournalEntry>;
+  today: string;
+  disabled: boolean;
+  isActive: boolean;
+  onSelect: (thought: string) => void;
+};
+
+function JournalThoughtBubbles({ entries, today, disabled, isActive, onSelect }: JournalThoughtBubblesProps) {
+  const theme = useAppTheme();
+  const reducedMotion = usePreferencesStore((state) => state.reducedMotion);
+  const thoughts = useMemo(() => getJournalThoughtBubbles(entries, today), [entries, today]);
+  const motionValues = useRef(
+    Array.from({ length: JOURNAL_THOUGHT_PROMPTS.length }, () => ({
+      y: new Animated.Value(0),
+      scale: new Animated.Value(1),
+    }))
+  ).current;
+  const travelY = 7;
+
+  useEffect(() => {
+    if (!isActive || reducedMotion) {
+      motionValues.forEach(({ y, scale }) => {
+        y.stopAnimation();
+        scale.stopAnimation();
+        y.setValue(0);
+        scale.setValue(1);
+      });
+      return;
+    }
+
+    const loops = motionValues.map(({ y, scale }, index) => {
+      const verticalDirection = index % 3 === 0 ? -1 : 1;
+
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.delay(index * 220),
+          Animated.parallel([
+            Animated.timing(y, {
+              toValue: verticalDirection * travelY,
+              duration: 2300 + index * 180,
+              useNativeDriver: true,
+            }),
+            Animated.sequence([
+              Animated.timing(scale, {
+                toValue: 1.04,
+                duration: 1150,
+                useNativeDriver: true,
+              }),
+              Animated.timing(scale, {
+                toValue: 0.98,
+                duration: 1150,
+                useNativeDriver: true,
+              }),
+            ]),
+          ]),
+          Animated.parallel([
+            Animated.timing(y, {
+              toValue: 0,
+              duration: 2100 + index * 150,
+              useNativeDriver: true,
+            }),
+            Animated.timing(scale, {
+              toValue: 1,
+              duration: 2100 + index * 150,
+              useNativeDriver: true,
+            }),
+          ]),
+        ])
+      );
+      loop.start();
+      return loop;
+    });
+
+    return () => {
+      loops.forEach((loop) => loop.stop());
+    };
+  }, [isActive, motionValues, reducedMotion]);
+
+  const handleSelectThought = (thought: string) => {
+    if (disabled) return;
+    onSelect(thought);
+  };
+
+  return (
+    <View
+      accessibilityLabel="Journal thought starters"
+      style={[styles.thoughtBubbleStage, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}
+    >
+      {thoughts.map((thought, index) => {
+        const motion = motionValues[index];
+
+        return (
+          <Animated.View
+            key={`${thought}-${index}`}
+            style={[
+              styles.thoughtBubbleWrap,
+              {
+                transform: [
+                  { translateY: reducedMotion ? 0 : motion.y },
+                  { scale: reducedMotion ? 1 : motion.scale },
+                ],
+              },
+            ]}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Add journal thought ${thought}`}
+              disabled={disabled}
+              onPress={() => handleSelectThought(thought)}
+              style={({ pressed }) => [
+                styles.thoughtBubble,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.softBorder,
+                },
+                pressed && styles.thoughtBubblePressed,
+              ]}
+            >
+              <Text
+                numberOfLines={2}
+                style={[styles.thoughtBubbleText, { color: theme.textStrong }]}
+              >
+                {thought}
+              </Text>
+            </Pressable>
+          </Animated.View>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function JournalScreen() {
+  const params = useLocalSearchParams<{ closeoutNote?: string | string[] }>();
   const today = useMemo(() => getLocalDateKey(), []);
-  const yesterday = useMemo(() => getPreviousDateKey(today), [today]);
   const entries = useJournalStore((state) => state.entries);
   const setFeelingNote = useJournalStore((state) => state.setFeelingNote);
   const setImageAttachment = useJournalStore((state) => state.setImageAttachment);
   const setEntryDailyContext = useJournalStore((state) => state.setDailyContext);
   const setTaskSnapshot = useJournalStore((state) => state.setTaskSnapshot);
-  const addSummary = useJournalStore((state) => state.addSummary);
   const markHomeGuideFeatureVisited = usePreferencesStore((state) => state.markHomeGuideFeatureVisited);
+  const hasActivePersonaCharge = useRewardStore((state) => state.hasActivePersonaCharge);
   const hasHydratedTasks = useTaskStore((state) => state.hasHydrated);
   const resetDailyTasks = useTaskStore((state) => state.resetDailyTasks);
   const theme = useAppTheme();
   const [isJournalModalVisible, setIsJournalModalVisible] = useState(false);
   const [journalNote, setJournalNote] = useState('');
   const [journalImage, setJournalImage] = useState<JournalImageAttachment | null>(null);
-  const [journalImageBase64, setJournalImageBase64] = useState('');
   const [isSavingJournal, setIsSavingJournal] = useState(false);
   const [isTranscribingVoice, setIsTranscribingVoice] = useState(false);
-  const [reviewDateKey, setReviewDateKey] = useState('');
-  const [isReviewModalVisible, setIsReviewModalVisible] = useState(false);
-  const [isReviewLoading, setIsReviewLoading] = useState(false);
-  const [reviewSummary, setReviewSummary] = useState<JournalSummary | null>(null);
-  const [reviewError, setReviewError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const { isVisible: isKeyboardVisible } = useKeyboardState();
   const voiceRecorder = useVoiceCheckInRecorder();
+  const handledCloseoutNoteRef = useRef('');
   const historyDateKeys = useMemo(() => {
-    return Object.keys(entries)
+    const previousDateKeys = Object.keys(entries)
       .filter((dateKey) => hasHistoryContent(entries[dateKey], dateKey, today))
       .sort((a, b) => b.localeCompare(a));
+
+    return [today, ...previousDateKeys.filter((dateKey) => dateKey !== today)];
   }, [entries, today]);
   const filteredDateKeys = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -158,23 +313,12 @@ export default function JournalScreen() {
         getMoodLabel(entry?.mood) ?? '',
         getFeelingScoreLabel(entry?.feelingScale?.score),
         ...getDailyContextLabels(entry?.dailyContext),
-        ...(entry?.summaries.flatMap((summary) => [summary.title, summary.body]) ?? []),
         ...tasks.flatMap((task) => [task.title, task.detail]),
       ];
 
       return fields.some((field) => field.toLowerCase().includes(query));
     });
   }, [entries, historyDateKeys, searchQuery, today]);
-
-  const yesterdayEntry = entries[yesterday];
-  const hasYesterdayReview = hasHistoryContent(yesterdayEntry, yesterday, today);
-  const reviewEntry = reviewDateKey ? entries[reviewDateKey] : undefined;
-  const reviewTasks = getVisibleTasks(reviewEntry, reviewDateKey, today);
-  const reviewFeelingNote = reviewEntry?.feelingNote.trim() ?? '';
-  const reviewMoodLabel = getMoodLabel(reviewEntry?.mood);
-  const reviewImage = reviewEntry?.image;
-  const reviewDailyContextLabels = getDailyContextLabels(reviewEntry?.dailyContext);
-  const reviewFeelingScoreLabel = getFeelingScoreLabel(reviewEntry?.feelingScale?.score);
 
   useEffect(() => {
     markHomeGuideFeatureVisited('journal');
@@ -185,6 +329,22 @@ export default function JournalScreen() {
       resetDailyTasks();
     }
   }, [hasHydratedTasks, resetDailyTasks]);
+
+  useEffect(() => {
+    const closeoutNote = Array.isArray(params.closeoutNote) ? params.closeoutNote[0] : params.closeoutNote;
+    const cleanCloseoutNote = closeoutNote?.trim() ?? '';
+    if (!cleanCloseoutNote || handledCloseoutNoteRef.current === cleanCloseoutNote) return;
+
+    handledCloseoutNoteRef.current = cleanCloseoutNote;
+    const existingNote = entries[today]?.feelingNote.trim() ?? '';
+    const nextNote = existingNote
+      ? `${existingNote}\n\n${cleanCloseoutNote}`
+      : cleanCloseoutNote;
+
+    setJournalNote(clampText(nextNote, INPUT_LIMITS.journalNote));
+    setJournalImage(entries[today]?.image ?? null);
+    setIsJournalModalVisible(true);
+  }, [entries, params.closeoutNote, today]);
 
   useEffect(() => {
     if ((entries[today]?.tasks.length ?? 0) > 0) {
@@ -202,8 +362,8 @@ export default function JournalScreen() {
       router.replace('/main');
       return;
     }
-    if (tab === 'settings') {
-      router.replace('/settings');
+    if (tab === 'profile') {
+      router.replace('/profile');
       return;
     }
     if (tab === 'companion') {
@@ -223,8 +383,15 @@ export default function JournalScreen() {
   const openJournalComposer = () => {
     setJournalNote(entries[today]?.feelingNote ?? '');
     setJournalImage(entries[today]?.image ?? null);
-    setJournalImageBase64('');
     setIsJournalModalVisible(true);
+  };
+
+  const handleAddThoughtStarter = (thought: string) => {
+    setJournalNote((current) => {
+      const cleanCurrent = current.trim();
+      const separator = cleanCurrent ? '\n\n' : '';
+      return clampText(`${cleanCurrent}${separator}${thought}`, INPUT_LIMITS.journalNote);
+    });
   };
 
   const handlePickJournalImage = async () => {
@@ -241,7 +408,6 @@ export default function JournalScreen() {
         mediaTypes: 'images',
         allowsEditing: true,
         quality: 0.72,
-        base64: true,
       });
 
       if (result.canceled || !result.assets?.[0]) return;
@@ -254,7 +420,6 @@ export default function JournalScreen() {
         height: asset.height || undefined,
         fileName: asset.fileName ?? null,
       });
-      setJournalImageBase64(asset.base64 ?? '');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to attach this image.';
       Alert.alert('Image not attached', message);
@@ -263,11 +428,17 @@ export default function JournalScreen() {
 
   const handleRemoveJournalImage = () => {
     setJournalImage(null);
-    setJournalImageBase64('');
   };
 
   const handleToggleVoiceJournal = async () => {
     if (isSavingJournal || isTranscribingVoice) return;
+    if (!hasActivePersonaCharge()) {
+      Alert.alert(
+        'Charge Wenwen first',
+        `Wenwen voice notes need persona charge. Spend ${PERSONA_CHARGE_COST} ${REWARD_CURRENCY_NAME} for ${PERSONA_CHARGE_HOURS} hours from Companion.`
+      );
+      return;
+    }
 
     try {
       if (!voiceRecorder.isRecording) {
@@ -305,73 +476,7 @@ export default function JournalScreen() {
     }
   };
 
-  const openReviewForDate = useCallback(
-    async (dateKey: string) => {
-      const entry = useJournalStore.getState().entries[dateKey];
-      if (!hasHistoryContent(entry, dateKey, today)) return;
-
-      const tasks = getVisibleTasks(entry, dateKey, today);
-      const feelingNote = entry?.feelingNote.trim() ?? '';
-      const entryDailyContext = entry?.dailyContext ?? {};
-      const feelingScore = entry?.feelingScale?.score;
-
-      setReviewDateKey(dateKey);
-      setIsReviewModalVisible(true);
-      setReviewError('');
-
-      const existingSummary =
-        entry?.summaries.find(
-          (summary) =>
-            summary.tasks.length === tasks.length &&
-            summary.feelingNote.trim() === feelingNote &&
-            summary.feelingScore === feelingScore &&
-            getJournalImageKey(summary.image) === getJournalImageKey(entry?.image) &&
-            getDailyContextKey(summary.dailyContext) === getDailyContextKey(entryDailyContext)
-        ) ??
-        null;
-      if (existingSummary) {
-        setReviewSummary(existingSummary);
-        return;
-      }
-
-      setReviewSummary(null);
-      setIsReviewLoading(true);
-      try {
-        const geminiImage = await getJournalImageForGemini(entry?.image);
-        const result = await generateJournalSummary({
-          dateKey,
-          tasks,
-          feelingNote,
-          dailyContext: entryDailyContext,
-          feelingScore,
-          image: geminiImage,
-          hasImage: Boolean(entry?.image),
-          mood: entry?.mood,
-        });
-        const summary = addSummary({
-          dateKey,
-          title: result.title,
-          body: result.body,
-          tasks,
-          feelingNote,
-          dailyContext: entryDailyContext,
-          feelingScore,
-          image: entry?.image,
-          mood: entry?.mood,
-        });
-        setReviewSummary(summary);
-        await scheduleJournalSummaryNotification(summary);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Wenwen could not write this note yet.';
-        setReviewError(message);
-      } finally {
-        setIsReviewLoading(false);
-      }
-    },
-    [addSummary, today]
-  );
-
-  const handleSaveJournal = async () => {
+  const handleSaveJournal = () => {
     const cleanNote = clampText(journalNote, INPUT_LIMITS.journalNote).trim();
     if (!cleanNote && !journalImage) {
       Alert.alert('Add something first', 'Write a note or attach a photo before saving.');
@@ -383,42 +488,8 @@ export default function JournalScreen() {
     setImageAttachment(today, journalImage ?? undefined);
     setEntryDailyContext(today, {});
     setTaskSnapshot(today, []);
-
-    try {
-      const geminiImage = await getJournalImageForGemini(journalImage, journalImageBase64);
-      const result = await generateJournalSummary({
-        dateKey: today,
-        tasks: [],
-        feelingNote: cleanNote,
-        dailyContext: {},
-        feelingScore: entries[today]?.feelingScale?.score,
-        image: geminiImage,
-        hasImage: Boolean(journalImage),
-        mood: entries[today]?.mood,
-      });
-      const summary = addSummary({
-        dateKey: today,
-        title: result.title,
-        body: result.body,
-        tasks: [],
-        feelingNote: cleanNote,
-        dailyContext: {},
-        feelingScore: entries[today]?.feelingScale?.score,
-        image: journalImage ?? undefined,
-        mood: entries[today]?.mood,
-      });
-      setReviewDateKey(today);
-      setReviewSummary(summary);
-      setReviewError('');
-      setIsReviewModalVisible(true);
-      await scheduleJournalSummaryNotification(summary);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Your journal was saved, but Wenwen could not summarize it yet.';
-      Alert.alert('Journal saved', message);
-    } finally {
-      setIsSavingJournal(false);
-      setIsJournalModalVisible(false);
-    }
+    setIsSavingJournal(false);
+    setIsJournalModalVisible(false);
   };
 
   return (
@@ -429,11 +500,16 @@ export default function JournalScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.screenTitle, { color: theme.subtle }]}>Journal</Text>
-        <Text style={[styles.heroTitle, { color: theme.text }]}>Daily history</Text>
-        <Text style={[styles.heroSubtitle, { color: theme.muted }]}>
-          Daily notes, task history, and AI reviews.
-        </Text>
+        <View style={styles.headerRow}>
+          <View style={styles.headerTextWrap}>
+            <Text style={[styles.screenTitle, { color: theme.subtle }]}>Journal</Text>
+            <Text style={[styles.heroTitle, { color: theme.text }]}>Daily history</Text>
+            <Text style={[styles.heroSubtitle, { color: theme.muted }]}>
+              Daily notes, mood check-ins, and task history.
+            </Text>
+          </View>
+          <GlowBalancePill />
+        </View>
 
         <View style={styles.actionRow}>
           <TouchableOpacity
@@ -445,17 +521,6 @@ export default function JournalScreen() {
             <Ionicons name="create-outline" size={18} color="#FFFFFF" />
             <Text style={styles.addJournalButtonText}>Add Journal</Text>
           </TouchableOpacity>
-          {hasYesterdayReview && (
-            <TouchableOpacity
-              accessibilityRole="button"
-              accessibilityLabel="Show yesterday review"
-              style={[styles.reviewButton, { backgroundColor: theme.surface, borderColor: theme.border }]}
-              onPress={() => openReviewForDate(yesterday)}
-            >
-              <Ionicons name="sparkles-outline" size={17} color={theme.primaryStrong} />
-              <Text style={[styles.reviewButtonText, { color: theme.primaryStrong }]}>Yesterday</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {historyDateKeys.length > 0 && (
@@ -465,7 +530,7 @@ export default function JournalScreen() {
               value={searchQuery}
               onChangeText={setSearchQuery}
               accessibilityLabel="Search journal history"
-              placeholder="Search notes, moods, summaries..."
+              placeholder="Search notes, moods, tasks..."
               placeholderTextColor={theme.subtle}
               style={[styles.searchInput, { color: theme.text }]}
             />
@@ -510,15 +575,33 @@ export default function JournalScreen() {
           <View style={styles.list}>
             {filteredDateKeys.map((dateKey) => {
               const entry = entries[dateKey];
+              const isTodayEntry = dateKey === today;
               const sourceTasks = getVisibleTasks(entry, dateKey, today);
               const finishedCount = sourceTasks.filter((task) => task.done).length;
               const noteText = entry?.feelingNote?.trim();
               const moodLabel = getMoodLabel(entry?.mood);
               const feelingScoreLabel = getFeelingScoreLabel(entry?.feelingScale?.score);
-              const summary = entry?.summaries[0];
               const hasTasks = sourceTasks.length > 0;
               const hasContext = hasDailyContext(entry?.dailyContext);
               const hasImage = Boolean(entry?.image);
+              const hasAnyJournalContent =
+                Boolean(noteText) ||
+                Boolean(feelingScoreLabel) ||
+                Boolean(moodLabel) ||
+                hasImage ||
+                hasContext;
+              const metaParts = [
+                hasTasks
+                  ? `${finishedCount}/${sourceTasks.length} tasks finished`
+                  : hasAnyJournalContent
+                    ? 'Journal note'
+                    : 'No note yet',
+                feelingScoreLabel,
+                moodLabel,
+                noteText ? 'Note added' : '',
+                hasImage ? 'Photo added' : '',
+                hasContext ? 'Context added' : '',
+              ].filter(Boolean);
 
               return (
                 <Pressable
@@ -528,29 +611,30 @@ export default function JournalScreen() {
                   onPress={() => handleOpenDate(dateKey)}
                   style={({ pressed }) => [
                     styles.dateCard,
-                    { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow },
+                    isTodayEntry && styles.todayDateCard,
+                    {
+                      backgroundColor: isTodayEntry ? theme.primarySoft : theme.surface,
+                      borderColor: isTodayEntry ? theme.primary : theme.border,
+                      shadowColor: theme.shadow,
+                    },
                     pressed && styles.dateCardPressed,
                   ]}
                 >
-                  <View style={[styles.dateIcon, { backgroundColor: theme.primarySoft }]}>
-                    <Ionicons name="calendar-outline" size={20} color={theme.primaryStrong} />
+                  <View style={[styles.dateIcon, { backgroundColor: isTodayEntry ? theme.primary : theme.primarySoft }]}>
+                    <Ionicons
+                      name={isTodayEntry ? 'today-outline' : 'calendar-outline'}
+                      size={20}
+                      color={isTodayEntry ? '#FFFFFF' : theme.primaryStrong}
+                    />
                   </View>
                   <View style={styles.dateTextWrap}>
                     <Text style={[styles.dateTitle, { color: theme.textStrong }]}>
                       {formatDateLabel(dateKey)}
-                      {dateKey === today ? ' · Today' : ''}
+                      {isTodayEntry ? ' · Today' : ''}
                     </Text>
                     <Text style={[styles.dateMeta, { color: theme.muted }]}>
-                      {hasTasks ? `${finishedCount}/${sourceTasks.length} tasks finished` : 'Journal note'}
-                      {feelingScoreLabel ? ` · ${feelingScoreLabel}` : ''}
-                      {moodLabel ? ` · ${moodLabel}` : ''}
-                      {noteText ? ' · Note added' : ''}
-                      {hasImage ? ' · Photo added' : ''}
-                      {hasContext ? ' · Context added' : ''}
+                      {metaParts.join(' · ')}
                     </Text>
-                    {summary && (
-                      <Text style={[styles.summaryPreview, { color: theme.primaryStrong }]}>{summary.title}</Text>
-                    )}
                   </View>
                   <Ionicons name="chevron-forward" size={18} color={theme.subtle} />
                 </Pressable>
@@ -600,6 +684,14 @@ export default function JournalScreen() {
                 Write freely. No format required.
               </Text>
 
+              <JournalThoughtBubbles
+                entries={entries}
+                today={today}
+                disabled={isSavingJournal}
+                isActive={isJournalModalVisible}
+                onSelect={handleAddThoughtStarter}
+              />
+
               <View style={[styles.imageAttachCard, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}>
                 {journalImage ? (
                   <View style={styles.imagePreviewRow}>
@@ -607,7 +699,7 @@ export default function JournalScreen() {
                     <View style={styles.imagePreviewTextWrap}>
                       <Text style={[styles.imagePreviewTitle, { color: theme.textStrong }]}>Photo attached</Text>
                       <Text style={[styles.imagePreviewBody, { color: theme.muted }]}>
-                        This can help Wenwen summarize the memory if the image data is available.
+                        Optional memory cue for this journal.
                       </Text>
                       <TouchableOpacity
                         accessibilityRole="button"
@@ -710,8 +802,8 @@ export default function JournalScreen() {
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <>
-                    <Ionicons name="sparkles-outline" size={18} color="#FFFFFF" />
-                    <Text style={styles.modalPrimaryButtonText}>Save & Summarize</Text>
+                    <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.modalPrimaryButtonText}>Save Journal</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -719,106 +811,6 @@ export default function JournalScreen() {
           </View>
         </View>
         </KeyboardAvoidingView>
-      </Modal>
-
-      <Modal
-        animationType="fade"
-        transparent
-        visible={isReviewModalVisible}
-        onRequestClose={() => setIsReviewModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.reviewModalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <View style={styles.modalHeader}>
-              <View style={styles.reviewTitleWrap}>
-                <Text style={[styles.modalKicker, { color: theme.subtle }]}>
-                  {reviewDateKey ? formatDateLabel(reviewDateKey) : 'Daily review'}
-                </Text>
-                <Text style={[styles.modalTitle, { color: theme.text }]}>Daily review</Text>
-              </View>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Close daily review"
-                onPress={() => setIsReviewModalVisible(false)}
-                style={[styles.closeButton, { backgroundColor: theme.softSurface }]}
-              >
-                <Ionicons name="close" size={20} color={theme.muted} />
-              </Pressable>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.reviewScrollContent}>
-              {isReviewLoading ? (
-                <View style={styles.loadingBlock}>
-                  <ActivityIndicator color={theme.primaryStrong} />
-                  <Text style={[styles.loadingText, { color: theme.muted }]}>Writing the review...</Text>
-                </View>
-              ) : reviewSummary ? (
-                <View style={[styles.summaryCard, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
-                  <Text style={[styles.summaryTitle, { color: theme.text }]}>{reviewSummary.title}</Text>
-                  <Text style={[styles.summaryBody, { color: theme.muted }]}>{reviewSummary.body}</Text>
-                </View>
-              ) : (
-                <View style={[styles.summaryCard, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}>
-                  <Text style={[styles.summaryTitle, { color: theme.text }]}>Saved for later</Text>
-                  <Text style={[styles.summaryBody, { color: theme.muted }]}>
-                    {reviewError || 'The AI review could not be written yet, but this day is still saved.'}
-                  </Text>
-                </View>
-              )}
-
-              <View style={[styles.reviewSection, { borderColor: theme.softBorder }]}>
-                <Text style={[styles.reviewSectionTitle, { color: theme.textStrong }]}>Tasks</Text>
-                {reviewTasks.length === 0 ? (
-                  <Text style={[styles.reviewMutedText, { color: theme.muted }]}>No task snapshot saved for this day.</Text>
-                ) : (
-                  reviewTasks.map((task) => (
-                    <View key={task.id} style={styles.reviewTaskRow}>
-                      <Ionicons
-                        name={task.done ? 'checkmark-circle' : 'ellipse-outline'}
-                        size={18}
-                        color={task.done ? '#56BA88' : theme.subtle}
-                      />
-                      <View style={styles.reviewTaskTextWrap}>
-                        <Text style={[styles.reviewTaskTitle, { color: theme.textStrong }]}>{task.title}</Text>
-                        <Text style={[styles.reviewMutedText, { color: theme.muted }]}>
-                          {task.done ? 'Finished' : 'Still open'}
-                        </Text>
-                      </View>
-                    </View>
-                  ))
-                )}
-              </View>
-
-              <View style={[styles.reviewSection, { borderColor: theme.softBorder }]}>
-                <Text style={[styles.reviewSectionTitle, { color: theme.textStrong }]}>Daily note</Text>
-                {reviewImage && <Image source={{ uri: reviewImage.uri }} style={styles.reviewImage} />}
-                <Text style={[styles.reviewMutedText, { color: theme.muted }]}>
-                  {reviewFeelingNote || 'No note was written for this day.'}
-                </Text>
-                {reviewMoodLabel && (
-                  <Text style={[styles.moodLine, { color: theme.primaryStrong }]}>Mood: {reviewMoodLabel}</Text>
-                )}
-                {reviewFeelingScoreLabel ? (
-                  <Text style={[styles.moodLine, { color: theme.primaryStrong }]}>{reviewFeelingScoreLabel}</Text>
-                ) : null}
-              </View>
-
-              {reviewDailyContextLabels.length > 0 && (
-                <View style={[styles.reviewSection, { borderColor: theme.softBorder }]}>
-                  <Text style={[styles.reviewSectionTitle, { color: theme.textStrong }]}>Daily context</Text>
-                  <View style={styles.contextReviewList}>
-                    {reviewDailyContextLabels.map((label) => (
-                      <View key={label} style={[styles.contextReviewPill, { backgroundColor: theme.softSurface }]}>
-                        <Ionicons name="analytics-outline" size={15} color={theme.primaryStrong} />
-                        <Text style={[styles.contextReviewText, { color: theme.muted }]}>{label}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-          </View>
-        </View>
       </Modal>
 
       {!isKeyboardVisible && (
@@ -838,6 +830,16 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingHorizontal: 20,
     paddingBottom: 120,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 14,
+  },
+  headerTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   screenTitle: {
     fontSize: 14,
@@ -961,6 +963,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 1,
   },
+  todayDateCard: {
+    borderWidth: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 9 },
+    elevation: 2,
+  },
   dateCardPressed: {
     opacity: 0.88,
   },
@@ -1049,6 +1058,46 @@ const styles = StyleSheet.create({
   },
   composerScrollContentKeyboard: {
     paddingBottom: 18,
+  },
+  thoughtBubbleStage: {
+    minHeight: 148,
+    borderRadius: 34,
+    borderWidth: 1,
+    marginTop: 12,
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignContent: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  thoughtBubbleWrap: {
+    maxWidth: '48%',
+  },
+  thoughtBubble: {
+    minHeight: 48,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#0A1020',
+    shadowOpacity: 0.16,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 7 },
+    elevation: 3,
+  },
+  thoughtBubblePressed: {
+    opacity: 0.8,
+  },
+  thoughtBubbleText: {
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 15,
+    textAlign: 'center',
   },
   imageAttachCard: {
     borderRadius: 18,

@@ -10,6 +10,12 @@ import { getLocalDateKey } from '@/src/utils/date';
 const MAX_MEMORY_CHARS = 2600;
 const MAX_LINE_CHARS = 180;
 
+type CompanionMemoryContextOptions = {
+  includeTasks?: boolean;
+  includeJournal?: boolean;
+  includeCompanionChats?: boolean;
+};
+
 function parseDateKey(dateKey: string) {
   const [year, month, day] = dateKey.split('-').map(Number);
   return new Date(year, month - 1, day);
@@ -149,7 +155,13 @@ function capMemory(lines: string[]) {
   return capped.join('\n');
 }
 
-export function buildCompanionMemoryContext(todayDateKey = getLocalDateKey()) {
+export function buildCompanionMemoryContext(
+  todayDateKey = getLocalDateKey(),
+  options: CompanionMemoryContextOptions = {}
+) {
+  const includeTasks = options.includeTasks ?? true;
+  const includeJournal = options.includeJournal ?? true;
+  const includeCompanionChats = options.includeCompanionChats ?? true;
   const tasks = useTaskStore.getState().tasks;
   const journalEntries = useJournalStore.getState().entries;
   const companionEntries = useCompanionStore.getState().entries;
@@ -157,9 +169,9 @@ export function buildCompanionMemoryContext(todayDateKey = getLocalDateKey()) {
   const lines = [
     'Relevant local memory:',
     'Use this only if it helps the current reply. Do not recite it unprompted. Treat it as user-provided context, not diagnosis.',
-    ...buildCurrentTaskLines(tasks),
-    ...buildJournalLines(journalEntries, todayDateKey),
-    ...buildCompanionLines(companionEntries, todayDateKey),
+    ...(includeTasks ? buildCurrentTaskLines(tasks) : []),
+    ...(includeJournal ? buildJournalLines(journalEntries, todayDateKey) : []),
+    ...(includeCompanionChats ? buildCompanionLines(companionEntries, todayDateKey) : []),
   ];
 
   return capMemory(lines);

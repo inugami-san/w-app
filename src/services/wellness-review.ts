@@ -1,6 +1,8 @@
-import { getMoodLabel } from '@/src/features/journal/moods';
+import { Pedometer } from 'expo-sensors';
 import { useCompanionStore } from '@/src/store/companion-store';
 import { useJournalStore } from '@/src/store/journal-store';
+import { useLocationStore } from '@/src/store/location-store';
+import { usePreferencesStore } from '@/src/store/preferences-store';
 import type { EvaluationFrequency } from '@/src/types/journal';
 import type {
   WellnessReviewPeriod,
@@ -52,6 +54,30 @@ function formatShortDate(dateKey: string) {
     month: 'short',
     day: 'numeric',
   });
+}
+
+function getEndOfDateKey(dateKey: string) {
+  const date = parseDateKey(dateKey);
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+async function getStepCountForPeriod(period: WellnessReviewPeriod) {
+  try {
+    const isAvailable = await Pedometer.isAvailableAsync();
+    if (!isAvailable) return null;
+
+    const permission = await Pedometer.getPermissionsAsync();
+    if (!permission.granted) return null;
+
+    const result = await Pedometer.getStepCountAsync(
+      parseDateKey(period.startDateKey),
+      getEndOfDateKey(period.endDateKey)
+    );
+    return result.steps;
+  } catch {
+    return null;
+  }
 }
 
 function createPeriod(
@@ -132,42 +158,79 @@ export function getCompletedReviewPeriod(
 export function buildWellnessReviewSource(period: WellnessReviewPeriod): WellnessReviewSource {
   const journalEntries = useJournalStore.getState().entries;
   const companionEntries = useCompanionStore.getState().entries;
+  const locationVisits = useLocationStore.getState().visits;
+  const {
+    aiTaskContextEnabled,
+    aiJournalContextEnabled,
+    aiCompanionContextEnabled,
+    aiLocationContextEnabled,
+  } = usePreferencesStore.getState();
 
-  const tasks = period.dateKeys.flatMap((dateKey) => journalEntries[dateKey]?.tasks ?? []);
-  const journals = period.dateKeys
-    .map((dateKey) => {
-      const entry = journalEntries[dateKey];
-      if (!entry) return null;
-      const feelingNote = entry.feelingNote.trim();
-      const feelingScore = entry.feelingScale?.score;
-      if (!feelingNote && !entry.mood && typeof feelingScore !== 'number') return null;
-      return {
-        dateKey,
-        feelingNote,
-        feelingScore,
-        mood: entry.mood,
-      };
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  const tasks = aiTaskContextEnabled
+    ? period.dateKeys.flatMap((dateKey) => journalEntries[dateKey]?.tasks ?? [])
+    : [];
+  const journals = aiJournalContextEnabled
+    ? period.dateKeys
+        .map((dateKey) => {
+          const entry = journalEntries[dateKey];
+          if (!entry) return null;
+          const feelingNote = entry.feelingNote.trim();
+          const feelingScore = entry.feelingScale?.score;
+          if (!feelingNote && !entry.mood && typeof feelingScore !== 'number') return null;
+          return {
+            dateKey,
+            feelingNote,
+            feelingScore,
+            mood: entry.mood,
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    : [];
 
-  const companionDays = period.dateKeys
-    .map((dateKey) => {
-      const entry = companionEntries[dateKey];
-      const messages = entry?.messages.filter((message) => message.role !== 'assistant' || message.text.trim()) ?? [];
-      const hasUserMessage = messages.some((message) => message.role === 'user');
-      if (!hasUserMessage) return null;
-      return {
-        dateKey,
-        messages,
-      };
-    })
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+  const companionDays = aiCompanionContextEnabled
+    ? period.dateKeys
+        .map((dateKey) => {
+          const entry = companionEntries[dateKey];
+          const messages = entry?.messages.filter((message) => message.role !== 'assistant' || message.text.trim()) ?? [];
+          const hasUserMessage = messages.some((message) => message.role === 'user');
+          if (!hasUserMessage) return null;
+          return {
+            dateKey,
+            messages,
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    : [];
+  const locations = aiLocationContextEnabled
+    ? locationVisits.filter((visit) => {
+        const dateKey = getLocalDateKey(new Date(visit.createdAt));
+        return period.dateKeys.includes(dateKey);
+      })
+    : [];
 
   return {
     period,
     tasks,
     journals,
     companionDays,
+    movement: {
+      stepCount: null,
+      locationCount: locations.length,
+      locationLabels: locations.map((visit) => visit.label).slice(0, 5),
+    },
+  };
+}
+
+export async function buildWellnessReviewSourceWithMovement(period: WellnessReviewPeriod): Promise<WellnessReviewSource> {
+  const source = buildWellnessReviewSource(period);
+  const stepCount = await getStepCountForPeriod(period);
+
+  return {
+    ...source,
+    movement: {
+      ...source.movement,
+      stepCount,
+    },
   };
 }
 
@@ -175,7 +238,9 @@ export function hasWellnessReviewActivity(source: WellnessReviewSource) {
   return (
     source.tasks.length > 0 ||
     source.journals.length > 0 ||
-    source.companionDays.some((day) => day.messages.some((message) => message.role === 'user'))
+    source.companionDays.some((day) => day.messages.some((message) => message.role === 'user')) ||
+    Boolean(source.movement.stepCount && source.movement.stepCount > 0) ||
+    source.movement.locationCount > 0
   );
 }
 
@@ -185,25 +250,34 @@ export function createFallbackWellnessReview(source: WellnessReviewSource): Omit
     (total, day) => total + day.messages.filter((message) => message.role === 'user').length,
     0
   );
-  const moodLabels = source.journals
-    .map((journal) => getMoodLabel(journal.mood))
-    .filter((label): label is string => Boolean(label));
-  const feelingScores = source.journals
-    .map((journal) => journal.feelingScore)
-    .filter((score): score is number => typeof score === 'number');
-
-  const journalLine =
-    source.journals.length > 0
-      ? `${source.journals.length} journal check-in${source.journals.length === 1 ? '' : 's'}${moodLabels.length ? `, including ${moodLabels[0].toLowerCase()}` : ''}${feelingScores.length ? ` and a ${feelingScores[feelingScores.length - 1]}/10 feeling rating` : ''}.`
-      : 'No journal note was logged for this period.';
+  const movementParts: string[] = [];
+  if (completedTaskCount > 0) {
+    movementParts.push(`${completedTaskCount} finished task${completedTaskCount === 1 ? '' : 's'}`);
+  }
+  if (typeof source.movement.stepCount === 'number' && source.movement.stepCount > 0) {
+    movementParts.push(`${source.movement.stepCount.toLocaleString()} step${source.movement.stepCount === 1 ? '' : 's'}`);
+  }
+  if (source.movement.locationCount > 0) {
+    movementParts.push(`${source.movement.locationCount} saved place${source.movement.locationCount === 1 ? '' : 's'}`);
+  }
+  const movementLine =
+    movementParts.length > 0
+      ? `That effort showed up through ${movementParts.join(', ')}.`
+      : 'That still counts as care for yourself.';
+  const reflectionLine =
+    source.journals.length > 0 || companionMessageCount > 0
+      ? 'You also gave yourself space to check in, which matters.'
+      : 'Let today stay simple.';
 
   return {
     periodKey: source.period.key,
     title: source.period.title,
-    body: `${completedTaskCount}/${source.tasks.length} tasks were completed. ${journalLine} There were ${companionMessageCount} companion message${companionMessageCount === 1 ? '' : 's'}. Keep the next step small and realistic.`,
+    body: `You showed up in small, steady ways. ${movementLine} ${reflectionLine} One kind next step is enough.`,
     taskCount: source.tasks.length,
     completedTaskCount,
     journalCount: source.journals.length,
     companionMessageCount,
+    stepCount: source.movement.stepCount,
+    locationCount: source.movement.locationCount,
   };
 }

@@ -10,6 +10,7 @@ type TaskListProps = {
   onToggleTask: (task: TaskItem) => void;
   onRequestDeleteTask: (task: TaskItem) => void;
   completionCooldownRemaining: number;
+  routineCompletionCounts?: Record<string, number>;
 };
 
 export function TaskList({
@@ -17,6 +18,7 @@ export function TaskList({
   onToggleTask,
   onRequestDeleteTask,
   completionCooldownRemaining,
+  routineCompletionCounts = {},
 }: TaskListProps) {
   const theme = useAppTheme();
 
@@ -38,6 +40,7 @@ export function TaskList({
     <View style={styles.list}>
       {tasks.map((task) => {
         const isWaiting = completionCooldownRemaining > 0;
+        const routineCompletionCount = routineCompletionCounts[task.id] ?? 0;
 
         return (
           <Pressable
@@ -85,11 +88,13 @@ export function TaskList({
                 {task.isRoutine && (
                   <View style={[styles.routinePill, { backgroundColor: theme.primarySoft }]}>
                     <Ionicons name="repeat-outline" size={12} color={theme.primaryStrong} />
-                    <Text style={[styles.routineText, { color: theme.primaryStrong }]}>Daily</Text>
+                    <Text style={[styles.routineText, { color: theme.primaryStrong }]}>
+                      {routineCompletionCount > 1 ? `${routineCompletionCount}x this week` : 'Daily'}
+                    </Text>
                   </View>
                 )}
               </View>
-            </View>
+              </View>
           </Pressable>
         );
       })}

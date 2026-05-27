@@ -35,7 +35,6 @@ function normalizeSummary(raw: unknown): WellnessReviewResult {
 
 function summarizeSourceForPrompt(source: WellnessReviewSource) {
   const completed = source.tasks.filter((task) => task.done);
-  const unfinished = source.tasks.filter((task) => !task.done);
   const journals = source.journals.map((journal) => ({
     date: journal.dateKey,
     mood: getMoodLabel(journal.mood) ?? 'Not selected',
@@ -51,10 +50,12 @@ function summarizeSourceForPrompt(source: WellnessReviewSource) {
 
   return [
     `Period: ${source.period.label}`,
-    `Finished tasks: ${completed.map((task) => task.title).join(', ') || 'None'}`,
-    `Unfinished tasks: ${unfinished.map((task) => task.title).join(', ') || 'None'}`,
+    `Completed task signals: ${completed.map((task) => task.title).join(', ') || 'None'}`,
     `Journal entries: ${JSON.stringify(journals)}`,
     `Companion chats: ${JSON.stringify(companion)}`,
+    `Steps in period: ${typeof source.movement.stepCount === 'number' ? source.movement.stepCount : 'Unknown'}`,
+    `Saved places in period: ${source.movement.locationCount}`,
+    `Place labels: ${source.movement.locationLabels.join(', ') || 'None'}`,
   ].join('\n');
 }
 
@@ -64,20 +65,22 @@ export async function generateWellnessReview(
 ): Promise<Omit<WellnessReviewSummary, 'id' | 'createdAt'>> {
   const fallback = createFallbackWellnessReview(source);
   const prompt = buildWenwenPrompt([
-    'Task: Write one review for the user based on completed tasks, journal notes, and companion chat.',
+    'Task: Write one simple encouraging review for the user based on their recent signals.',
     'Review rules:',
-    '- Mention what was completed and what was recorded without guilt.',
-    '- Include journal mood, feeling rating, or note only when useful.',
-    '- Mention companion chat themes only at a high level.',
-    '- End with one practical, encouraging note for the next period.',
-    '- Keep the body to one short paragraph with 3-5 sentences.',
-    '- Use a clear title, not a sentimental title.',
+    '- Do not write a report or recap list.',
+    '- Do not start with "On [date]" or enumerate everything the user did.',
+    '- Lead with warm encouragement about the effort they showed.',
+    '- Weave in steps or places gently when present, without sounding like surveillance.',
+    '- Mention journal or companion reflection only as self-care, not as a data summary.',
+    '- End with one simple, kind next-step sentence.',
+    '- Keep the body to one short paragraph with 2-3 sentences.',
+    '- Use a short clear title.',
     '- Return only valid JSON with title and body.',
     '',
     summarizeSourceForPrompt(source),
     '',
     'JSON Format:',
-    '{ "title": "A clear title", "body": "One short paragraph, 3-5 sentences." }',
+    '{ "title": "A short title", "body": "One short encouraging paragraph, 2-3 sentences." }',
   ]);
 
   return requestGeminiWithFallback({

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -44,8 +44,11 @@ export function useVoiceCheckInRecorder() {
       return recorder.uri ?? recorder.getStatus().url;
     }
 
-    await recorder.stop();
-    await setAudioModeAsync({ allowsRecording: false });
+    try {
+      await recorder.stop();
+    } finally {
+      await setAudioModeAsync({ allowsRecording: false });
+    }
 
     const uri = recorder.uri ?? recorder.getStatus().url;
     if (!uri) {
@@ -55,11 +58,31 @@ export function useVoiceCheckInRecorder() {
     return uri;
   }, [recorder, recorderState.isRecording]);
 
+  const cancelRecording = useCallback(async () => {
+    try {
+      if (recorderState.isRecording || recorder.isRecording) {
+        await recorder.stop();
+      }
+    } finally {
+      await setAudioModeAsync({ allowsRecording: false });
+    }
+  }, [recorder, recorderState.isRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (recorder.isRecording) {
+        recorder.stop().catch(() => undefined);
+      }
+      setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    };
+  }, [recorder]);
+
   return {
     durationMillis: recorderState.durationMillis,
     isPreparing,
     isRecording: recorderState.isRecording,
     metering: recorderState.metering,
+    cancelRecording,
     startRecording,
     stopRecording,
   };

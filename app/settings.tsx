@@ -4,12 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
-import { MemoryTimelineCard } from '@/src/components/settings/MemoryTimelineCard';
 import { REMINDER_TIME_OPTIONS, syncGentleReminder } from '@/src/services/gentle-reminders';
 import { NIGHTLY_REVIEW_TIME, syncNightlyReviewNotification } from '@/src/services/nightly-review-notifications';
+import { startLocationAutoSync, stopLocationAutoSync } from '@/src/services/location-sync';
 import { useCompanionStore } from '@/src/store/companion-store';
 import { useJournalStore } from '@/src/store/journal-store';
+import { useLocationStore } from '@/src/store/location-store';
 import { type AppThemeMode, type ReminderTimeKey, usePreferencesStore } from '@/src/store/preferences-store';
+import { useRewardStore } from '@/src/store/reward-store';
 import { useTaskStore } from '@/src/store/task-store';
 import { useWellnessReviewStore } from '@/src/store/wellness-review-store';
 import { useAppTheme } from '@/src/theme/app-theme';
@@ -58,13 +60,56 @@ const THEME_OPTIONS: {
   },
 ];
 
+type AiPrivacyKey = 'tasks' | 'journal' | 'companion' | 'images' | 'locations';
+
+const AI_PRIVACY_OPTIONS: {
+  key: AiPrivacyKey;
+  title: string;
+  detail: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  {
+    key: 'tasks',
+    title: 'Tasks',
+    detail: 'Let AI use task titles and completion status for suggestions, companion context, and reviews.',
+    icon: 'checkmark-circle-outline',
+  },
+  {
+    key: 'journal',
+    title: 'Journal entries',
+    detail: 'Let AI use journal notes, moods, feeling ratings, and daily context.',
+    icon: 'journal-outline',
+  },
+  {
+    key: 'companion',
+    title: 'Companion chats',
+    detail: 'Let AI use previous companion messages when writing reviews or memory-aware replies.',
+    icon: 'chatbubble-ellipses-outline',
+  },
+  {
+    key: 'images',
+    title: 'Journal photos',
+    detail: 'Let AI receive attached journal image data when creating journal summaries.',
+    icon: 'image-outline',
+  },
+  {
+    key: 'locations',
+    title: 'Saved places',
+    detail: 'Let AI use saved place counts and labels when writing daily or weekly reviews.',
+    icon: 'location-outline',
+  },
+];
+
 export default function SettingsScreen() {
   const [isReminderBusy, setIsReminderBusy] = useState(false);
   const [isNightlyReviewBusy, setIsNightlyReviewBusy] = useState(false);
+  const [isLocationSyncBusy, setIsLocationSyncBusy] = useState(false);
   const frequency = useJournalStore((state) => state.evaluationFrequency);
   const setFrequency = useJournalStore((state) => state.setEvaluationFrequency);
   const clearJournalData = useJournalStore((state) => state.clearJournalData);
   const clearCompanionData = useCompanionStore((state) => state.clearCompanionData);
+  const clearLocationVisits = useLocationStore((state) => state.clearVisits);
+  const clearRewards = useRewardStore((state) => state.clearRewards);
   const clearTasks = useTaskStore((state) => state.clearTasks);
   const clearWellnessReviews = useWellnessReviewStore((state) => state.clearWellnessReviews);
   const themeMode = usePreferencesStore((state) => state.themeMode);
@@ -80,13 +125,28 @@ export default function SettingsScreen() {
   const nightlyReviewNotificationId = usePreferencesStore((state) => state.nightlyReviewNotificationId);
   const companionMemoryEnabled = usePreferencesStore((state) => state.companionMemoryEnabled);
   const setCompanionMemoryEnabled = usePreferencesStore((state) => state.setCompanionMemoryEnabled);
+  const aiTaskContextEnabled = usePreferencesStore((state) => state.aiTaskContextEnabled);
+  const setAiTaskContextEnabled = usePreferencesStore((state) => state.setAiTaskContextEnabled);
+  const aiJournalContextEnabled = usePreferencesStore((state) => state.aiJournalContextEnabled);
+  const setAiJournalContextEnabled = usePreferencesStore((state) => state.setAiJournalContextEnabled);
+  const aiCompanionContextEnabled = usePreferencesStore((state) => state.aiCompanionContextEnabled);
+  const setAiCompanionContextEnabled = usePreferencesStore((state) => state.setAiCompanionContextEnabled);
+  const aiJournalImageContextEnabled = usePreferencesStore((state) => state.aiJournalImageContextEnabled);
+  const setAiJournalImageContextEnabled = usePreferencesStore((state) => state.setAiJournalImageContextEnabled);
+  const aiLocationContextEnabled = usePreferencesStore((state) => state.aiLocationContextEnabled);
+  const setAiLocationContextEnabled = usePreferencesStore((state) => state.setAiLocationContextEnabled);
+  const locationAutoSyncEnabled = usePreferencesStore((state) => state.locationAutoSyncEnabled);
+  const setLocationAutoSyncEnabled = usePreferencesStore((state) => state.setLocationAutoSyncEnabled);
   const resetHomeGuide = usePreferencesStore((state) => state.resetHomeGuide);
   const resetPreferences = usePreferencesStore((state) => state.resetPreferences);
   const setReminderSettings = usePreferencesStore((state) => state.setReminderSettings);
   const theme = useAppTheme();
 
   const handleTabPress = (tab: DashboardTabKey) => {
-    if (tab === 'settings') return;
+    if (tab === 'profile') {
+      router.replace('/profile');
+      return;
+    }
     if (tab === 'home') {
       router.replace('/dashboard');
       return;
@@ -171,6 +231,32 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleUpdateLocationAutoSync = async (enabled: boolean) => {
+    if (isLocationSyncBusy) return;
+
+    setIsLocationSyncBusy(true);
+    try {
+      if (!enabled) {
+        await stopLocationAutoSync();
+        setLocationAutoSyncEnabled(false);
+        return;
+      }
+
+      setLocationAutoSyncEnabled(true);
+      const result = await startLocationAutoSync();
+      if (result.status !== 'ready') {
+        Alert.alert('Place auto-sync not enabled', result.message);
+        setLocationAutoSyncEnabled(false);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to update place auto-sync.';
+      Alert.alert('Place auto-sync failed', message);
+      setLocationAutoSyncEnabled(false);
+    } finally {
+      setIsLocationSyncBusy(false);
+    }
+  };
+
   const confirmAction = (title: string, message: string, onConfirm: () => void | Promise<void>) => {
     Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel' },
@@ -196,6 +282,7 @@ export default function SettingsScreen() {
     const taskState = useTaskStore.getState();
     const companionState = useCompanionStore.getState();
     const reviewState = useWellnessReviewStore.getState();
+    const locationState = useLocationStore.getState();
 
     const exportPayload = {
       version: 1,
@@ -212,12 +299,18 @@ export default function SettingsScreen() {
         reminderTime: preferenceState.reminderTime,
         nightlyReviewEnabled: preferenceState.nightlyReviewEnabled,
         companionMemoryEnabled: preferenceState.companionMemoryEnabled,
+        aiTaskContextEnabled: preferenceState.aiTaskContextEnabled,
+        aiJournalContextEnabled: preferenceState.aiJournalContextEnabled,
+        aiCompanionContextEnabled: preferenceState.aiCompanionContextEnabled,
+        aiJournalImageContextEnabled: preferenceState.aiJournalImageContextEnabled,
+        aiLocationContextEnabled: preferenceState.aiLocationContextEnabled,
         reducedMotion: preferenceState.reducedMotion,
       },
       tasks: taskState.tasks,
       journalEntries: journalState.entries,
       companionEntries: companionState.entries,
       wellnessReviews: reviewState.reviews,
+      locationVisits: locationState.visits,
     };
 
     try {
@@ -258,10 +351,22 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleClearLocationVisits = () => {
+    confirmAction(
+      'Clear saved places?',
+      'This removes location check-ins saved on this device.',
+      async () => {
+        await stopLocationAutoSync();
+        setLocationAutoSyncEnabled(false);
+        clearLocationVisits();
+      }
+    );
+  };
+
   const handleClearAllData = () => {
     confirmAction(
       'Clear all Wenwen data?',
-      'This removes tasks, journals, companion chats, reviews, preferences, reminders, and onboarding state from this device.',
+      'This removes tasks, journals, companion chats, reviews, saved places, preferences, reminders, and onboarding state from this device.',
       async () => {
         await syncGentleReminder({
           enabled: false,
@@ -272,16 +377,47 @@ export default function SettingsScreen() {
           enabled: false,
           existingNotificationId: nightlyReviewNotificationId,
         });
+        await stopLocationAutoSync();
 
         clearTasks();
         clearJournalData();
         clearCompanionData();
         clearWellnessReviews();
+        clearLocationVisits();
+        clearRewards();
         setFrequency('daily');
         resetPreferences();
         router.replace('/login');
       }
     );
+  };
+
+  const aiPrivacyState = {
+    tasks: aiTaskContextEnabled,
+    journal: aiJournalContextEnabled,
+    companion: aiCompanionContextEnabled,
+    images: aiJournalImageContextEnabled,
+    locations: aiLocationContextEnabled,
+  };
+
+  const handleToggleAiPrivacy = (key: AiPrivacyKey) => {
+    if (key === 'tasks') {
+      setAiTaskContextEnabled(!aiTaskContextEnabled);
+      return;
+    }
+    if (key === 'journal') {
+      setAiJournalContextEnabled(!aiJournalContextEnabled);
+      return;
+    }
+    if (key === 'companion') {
+      setAiCompanionContextEnabled(!aiCompanionContextEnabled);
+      return;
+    }
+    if (key === 'locations') {
+      setAiLocationContextEnabled(!aiLocationContextEnabled);
+      return;
+    }
+    setAiJournalImageContextEnabled(!aiJournalImageContextEnabled);
   };
 
   return (
@@ -603,6 +739,49 @@ export default function SettingsScreen() {
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.cardHeaderRow}>
             <View style={styles.optionTextWrap}>
+              <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Place auto-sync</Text>
+              <Text style={[styles.cardCaption, { color: theme.muted }]}>
+                Automatically saves recent places for review context and the Places card on Home.
+              </Text>
+            </View>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: locationAutoSyncEnabled, disabled: isLocationSyncBusy }}
+              accessibilityLabel="Enable place auto-sync"
+              disabled={isLocationSyncBusy}
+              onPress={() => handleUpdateLocationAutoSync(!locationAutoSyncEnabled)}
+              style={[
+                styles.switchTrack,
+                {
+                  backgroundColor: locationAutoSyncEnabled ? theme.primary : theme.softSurface,
+                  borderColor: locationAutoSyncEnabled ? theme.primary : theme.softBorder,
+                },
+                isLocationSyncBusy && styles.optionDisabled,
+              ]}
+            >
+              <View
+                style={[
+                  styles.switchThumb,
+                  {
+                    backgroundColor: locationAutoSyncEnabled ? '#FFFFFF' : theme.subtle,
+                    transform: [{ translateX: locationAutoSyncEnabled ? 18 : 0 }],
+                  },
+                ]}
+              />
+            </Pressable>
+          </View>
+
+          <View style={[styles.fixedTimeRow, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}>
+            <Ionicons name="location-outline" size={16} color={theme.primaryStrong} />
+            <Text style={[styles.fixedTimeText, { color: theme.muted }]}>
+              When off, background place syncing stops and the Home Places card is hidden.
+            </Text>
+          </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.optionTextWrap}>
               <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Companion memory</Text>
               <Text style={[styles.cardCaption, { color: theme.muted }]}>
                 Let Wenwen use recent tasks, journals, check-ins, and previous chats to answer with more context.
@@ -640,20 +819,73 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <MemoryTimelineCard />
-
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <View style={styles.dataRow}>
-            <View style={[styles.dataIcon, { backgroundColor: theme.primarySoft }]}>
-              <Ionicons name="sparkles-outline" size={18} color={theme.primaryStrong} />
-            </View>
-            <View style={styles.optionTextWrap}>
-              <Text style={[styles.cardTitle, { color: theme.textStrong }]}>AI transparency</Text>
-              <Text style={[styles.cardCaption, { color: theme.muted }]}>
-                AI suggestions may send task titles, journal text, attached image data, voice recordings used for transcription, companion messages, and selected memory context when needed. Wenwen uses local fallback responses when AI fails.
+          <Text style={[styles.cardTitle, { color: theme.textStrong }]}>AI privacy</Text>
+          <Text style={[styles.cardCaption, { color: theme.muted }]}>
+            Choose which local content Wenwen can include with AI requests. Voice transcription still sends the recording you choose to transcribe.
+          </Text>
+
+          <View style={styles.optionList}>
+            {AI_PRIVACY_OPTIONS.map((option) => {
+              const isEnabled = aiPrivacyState[option.key];
+              return (
+                <View
+                  key={option.key}
+                  style={[
+                    styles.optionRow,
+                    {
+                      backgroundColor: theme.softSurface,
+                      borderColor: theme.softBorder,
+                    },
+                  ]}
+                >
+                  <View style={[styles.optionIcon, { backgroundColor: theme.primarySoft }]}>
+                    <Ionicons name={option.icon} size={18} color={theme.primaryStrong} />
+                  </View>
+                  <View style={styles.optionTextWrap}>
+                    <Text style={[styles.optionTitle, { color: theme.textStrong }]}>
+                      {option.title}
+                    </Text>
+                    <Text style={[styles.optionDetail, { color: theme.muted }]}>
+                      {option.detail}
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: isEnabled }}
+                    accessibilityLabel={`Allow AI to use ${option.title.toLowerCase()}`}
+                    onPress={() => handleToggleAiPrivacy(option.key)}
+                    style={[
+                      styles.switchTrack,
+                      {
+                        backgroundColor: isEnabled ? theme.primary : theme.softSurface,
+                        borderColor: isEnabled ? theme.primary : theme.softBorder,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.switchThumb,
+                        {
+                          backgroundColor: isEnabled ? '#FFFFFF' : theme.subtle,
+                          transform: [{ translateX: isEnabled ? 18 : 0 }],
+                        },
+                      ]}
+                    />
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+
+          {!aiJournalContextEnabled && (
+            <View style={[styles.fixedTimeRow, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}>
+              <Ionicons name="lock-closed-outline" size={16} color={theme.primaryStrong} />
+              <Text style={[styles.fixedTimeText, { color: theme.muted }]}>
+                Journal summaries use a local fallback while journal access is off.
               </Text>
             </View>
-          </View>
+          )}
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
@@ -725,6 +957,20 @@ export default function SettingsScreen() {
 
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityLabel="Clear saved places"
+                  onPress={handleClearLocationVisits}
+                  style={({ pressed }) => [
+                    styles.secondaryActionButton,
+                    { backgroundColor: theme.softSurface, borderColor: theme.softBorder },
+                    pressed && styles.actionPressed,
+                  ]}
+                >
+                  <Ionicons name="location-outline" size={16} color={theme.primaryStrong} />
+                  <Text style={[styles.secondaryActionText, { color: theme.primaryStrong }]}>Clear places</Text>
+                </Pressable>
+
+                <Pressable
+                  accessibilityRole="button"
                   accessibilityLabel="Clear all Wenwen data"
                   onPress={handleClearAllData}
                   style={({ pressed }) => [
@@ -742,7 +988,7 @@ export default function SettingsScreen() {
       </ScrollView>
 
       <View style={styles.bottomTabWrap}>
-        <BottomTabPlaceholder activeKey="settings" onTabPress={handleTabPress} />
+        <BottomTabPlaceholder activeKey="profile" onTabPress={handleTabPress} />
       </View>
     </View>
   );

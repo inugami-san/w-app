@@ -28,7 +28,7 @@ export type JournalImageAttachment = {
   fileName?: string | null;
 };
 
-export type JournalTaskSnapshot = Pick<TaskItem, 'id' | 'title' | 'detail' | 'done' | 'isRoutine'>;
+export type JournalTaskSnapshot = Pick<TaskItem, 'id' | 'title' | 'detail' | 'done' | 'isRoutine' | 'energy'>;
 
 export type JournalSummary = {
   id: string;

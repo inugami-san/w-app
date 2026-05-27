@@ -65,6 +65,7 @@ export const CatBase: React.FC<WenwenProps> = ({
   faceColor = '#E9EFEA',
   bodyColor = '#F7F3EC',
   presentation = 'full',
+  isAsleep = false,
 }) => {
   const [size, setSize] = useState(() => {
     const { width, height } = Dimensions.get('window');
@@ -481,25 +482,29 @@ export const CatBase: React.FC<WenwenProps> = ({
             <Oval x={CX - HEAD_W * 0.3} y={HEAD_Y + HEAD_H * 0.54} width={HEAD_W * 0.16} height={HEAD_H * 0.1} color={faceColor} opacity={0.35} />
             <Oval x={CX + HEAD_W * 0.14} y={HEAD_Y + HEAD_H * 0.54} width={HEAD_W * 0.16} height={HEAD_H * 0.1} color={faceColor} opacity={0.35} />
 
-            <Group transform={leftEyeT}>
-              <Oval x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} color="rgba(255,255,255,0.96)" />
-              <Oval x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} style="stroke" strokeWidth={CW * 0.011} color="rgba(30,41,59,0.13)" />
-              <Oval x={L_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeColor}>
-                <BlurMask blur={4} style="normal" />
-              </Oval>
-              <Oval x={L_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeGlow} />
-              <Oval x={L_EYE_X + PUPIL_W * 0.08} y={EYE_Y - PUPIL_H * 0.3} width={PUPIL_W * 0.26} height={PUPIL_W * 0.26} color="rgba(255,255,255,0.95)" />
-            </Group>
-            <Group transform={rightEyeT}>
-              <Oval x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} color="rgba(255,255,255,0.96)" />
-              <Oval x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} style="stroke" strokeWidth={CW * 0.011} color="rgba(30,41,59,0.13)" />
-              <Oval x={R_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeColor}>
-                <BlurMask blur={4} style="normal" />
-              </Oval>
-              <Oval x={R_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeGlow} />
-              <Oval x={R_EYE_X + PUPIL_W * 0.08} y={EYE_Y - PUPIL_H * 0.3} width={PUPIL_W * 0.26} height={PUPIL_W * 0.26} color="rgba(255,255,255,0.95)" />
-            </Group>
-            <Group opacity={closedEyeOpacity}>
+            {!isAsleep && (
+              <>
+                <Group transform={leftEyeT}>
+                  <Oval x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} color="rgba(255,255,255,0.96)" />
+                  <Oval x={L_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} style="stroke" strokeWidth={CW * 0.011} color="rgba(30,41,59,0.13)" />
+                  <Oval x={L_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeColor}>
+                    <BlurMask blur={4} style="normal" />
+                  </Oval>
+                  <Oval x={L_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeGlow} />
+                  <Oval x={L_EYE_X + PUPIL_W * 0.08} y={EYE_Y - PUPIL_H * 0.3} width={PUPIL_W * 0.26} height={PUPIL_W * 0.26} color="rgba(255,255,255,0.95)" />
+                </Group>
+                <Group transform={rightEyeT}>
+                  <Oval x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} color="rgba(255,255,255,0.96)" />
+                  <Oval x={R_EYE_X - EYE_W / 2} y={EYE_Y - EYE_H / 2} width={EYE_W} height={EYE_H} style="stroke" strokeWidth={CW * 0.011} color="rgba(30,41,59,0.13)" />
+                  <Oval x={R_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeColor}>
+                    <BlurMask blur={4} style="normal" />
+                  </Oval>
+                  <Oval x={R_EYE_X - PUPIL_W / 2} y={EYE_Y - PUPIL_H / 2} width={PUPIL_W} height={PUPIL_H} color={eyeGlow} />
+                  <Oval x={R_EYE_X + PUPIL_W * 0.08} y={EYE_Y - PUPIL_H * 0.3} width={PUPIL_W * 0.26} height={PUPIL_W * 0.26} color="rgba(255,255,255,0.95)" />
+                </Group>
+              </>
+            )}
+            <Group opacity={isAsleep ? 1 : closedEyeOpacity}>
               <Path path={leftClosedEyePath} color={lineColor} style="stroke" strokeWidth={CW * 0.012} strokeCap="round" />
               <Path path={rightClosedEyePath} color={lineColor} style="stroke" strokeWidth={CW * 0.012} strokeCap="round" />
             </Group>

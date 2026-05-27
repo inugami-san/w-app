@@ -60,6 +60,23 @@ export default {
         recordAudioAndroid: true,
       },
     ],
+    [
+      'expo-sensors',
+      {
+        motionPermission: 'Wenwen uses motion data to show your step count when you start step tracking.',
+      },
+    ],
+    [
+      'expo-location',
+      {
+        locationWhenInUsePermission: 'Wenwen uses your location to save places you visit when place auto-sync is on.',
+        locationAlwaysAndWhenInUsePermission: 'Wenwen uses background location to automatically save places you visit when place auto-sync is on.',
+        locationAlwaysPermission: 'Wenwen uses background location to automatically save places you visit when place auto-sync is on.',
+        isIosBackgroundLocationEnabled: true,
+        isAndroidBackgroundLocationEnabled: true,
+        isAndroidForegroundServiceEnabled: true,
+      },
+    ],
     'expo-sqlite',
     'expo-font',
     'expo-web-browser',

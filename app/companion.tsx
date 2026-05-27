@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -17,10 +18,11 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 
 import type { WenwenProps } from '@/components/WenwenBase';
 import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/home/BottomTabPlaceholder';
+import { GlowBalancePill } from '@/src/components/rewards/GlowBalancePill';
 import { useKeyboardState } from '@/src/hooks/use-keyboard-state';
 import { useVoiceCheckInRecorder } from '@/src/hooks/use-voice-check-in-recorder';
 import { buildCompanionMemoryContext } from '@/src/services/companion-memory';
@@ -39,8 +41,19 @@ import {
   type AvatarPersona,
   usePreferencesStore,
 } from '@/src/store/preferences-store';
+import { useJournalStore } from '@/src/store/journal-store';
+import {
+  DEEP_REVIEW_COST,
+  PERSONA_CHARGE_HOURS,
+  PERSONA_CHARGE_COST,
+  REWARD_CURRENCY_NAME,
+  useRewardStore,
+} from '@/src/store/reward-store';
+import { useTaskStore } from '@/src/store/task-store';
 import { useAppTheme } from '@/src/theme/app-theme';
 import type { CompanionChatSummary, CompanionDayEntry, CompanionMessage } from '@/src/types/companion';
+import type { JournalEntry } from '@/src/types/journal';
+import type { TaskItem } from '@/src/types/task';
 import { getLocalDateKey } from '@/src/utils/date';
 import { clampText, INPUT_LIMITS } from '@/src/utils/input-limits';
 import { loadSkiaWebIfNeeded } from '@/src/utils/load-skia-web';
@@ -69,12 +82,52 @@ function getMatchingSummary(entry: CompanionDayEntry | undefined, messages: Comp
   return entry?.summaries.find((summary) => summary.messages.length === messages.length) ?? null;
 }
 
+function formatChargeRemaining(remainingMs: number) {
+  if (remainingMs <= 0) return 'No charge';
+
+  const totalMinutes = Math.ceil(remainingMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours <= 0) return `${minutes}m left`;
+  if (minutes === 0) return `${hours}h left`;
+  return `${hours}h ${minutes}m left`;
+}
+
+const HISTORY_VISIBLE_ITEM_COUNT = 5;
+const HISTORY_CARD_MIN_HEIGHT = 78;
+const HISTORY_CARD_GAP = 10;
+const HISTORY_LIST_MAX_HEIGHT =
+  (HISTORY_CARD_MIN_HEIGHT * HISTORY_VISIBLE_ITEM_COUNT) +
+  (HISTORY_CARD_GAP * (HISTORY_VISIBLE_ITEM_COUNT - 1));
+
+function buildFloatingBubbleText(input: {
+  tasks: TaskItem[];
+  journalEntry?: JournalEntry;
+  messages: CompanionMessage[];
+}) {
+  const hasOpenTask = input.tasks.some((task) => !task.done);
+  if (hasOpenTask) return 'One small step counts.';
+
+  const completedCount = input.tasks.filter((task) => task.done).length;
+  if (completedCount > 0) return 'You made progress today.';
+
+  const journalNote = input.journalEntry?.feelingNote.trim();
+  if (journalNote) return 'Your thoughts are worth sorting.';
+
+  const latestUserMessage = [...input.messages].reverse().find((message) => message.role === 'user')?.text;
+  if (latestUserMessage) return 'Clarity can start small.';
+
+  return 'Begin where you are.';
+}
+
 type MiniPersonaAvatarProps = {
   colors: AvatarColors;
   persona: AvatarPersona;
+  isAsleep?: boolean;
 };
 
-function MiniPersonaAvatar({ colors, persona }: MiniPersonaAvatarProps) {
+function MiniPersonaAvatar({ colors, persona, isAsleep = false }: MiniPersonaAvatarProps) {
   if (persona === 'cat') {
     return (
       <View style={styles.miniCatScene}>
@@ -85,12 +138,21 @@ function MiniPersonaAvatar({ colors, persona }: MiniPersonaAvatarProps) {
           <View style={[styles.miniCatInnerEar, { backgroundColor: colors.faceColor }]} />
         </View>
         <View style={[styles.miniCatHead, { backgroundColor: colors.bodyColor }]}>
-          <View style={[styles.miniCatEye, styles.miniCatEyeLeft]}>
-            <View style={[styles.miniCatPupil, { backgroundColor: colors.eyeColor }]} />
-          </View>
-          <View style={[styles.miniCatEye, styles.miniCatEyeRight]}>
-            <View style={[styles.miniCatPupil, { backgroundColor: colors.eyeColor }]} />
-          </View>
+          {isAsleep ? (
+            <>
+              <View style={[styles.miniCatSleepEye, styles.miniCatSleepEyeLeft, { borderBottomColor: colors.eyeColor }]} />
+              <View style={[styles.miniCatSleepEye, styles.miniCatSleepEyeRight, { borderBottomColor: colors.eyeColor }]} />
+            </>
+          ) : (
+            <>
+              <View style={[styles.miniCatEye, styles.miniCatEyeLeft]}>
+                <View style={[styles.miniCatPupil, { backgroundColor: colors.eyeColor }]} />
+              </View>
+              <View style={[styles.miniCatEye, styles.miniCatEyeRight]}>
+                <View style={[styles.miniCatPupil, { backgroundColor: colors.eyeColor }]} />
+              </View>
+            </>
+          )}
           <View style={[styles.miniCatMuzzle, { backgroundColor: colors.faceColor }]}>
             <View style={[styles.miniCatNose, { borderBottomColor: colors.eyeColor }]} />
           </View>
@@ -110,9 +172,18 @@ function MiniPersonaAvatar({ colors, persona }: MiniPersonaAvatarProps) {
       <View style={[styles.miniBotBody, { backgroundColor: colors.bodyColor }]}>
         <View style={[styles.miniBotFaceRim, { borderColor: colors.faceColor }]}>
           <View style={[styles.miniBotFace, { backgroundColor: colors.faceColor }]}>
-            <View style={[styles.miniBotEye, { backgroundColor: colors.eyeColor }]} />
-            <View style={[styles.miniBotSmile, { borderBottomColor: colors.eyeColor }]} />
-            <View style={[styles.miniBotEye, { backgroundColor: colors.eyeColor }]} />
+            {isAsleep ? (
+              <>
+                <View style={[styles.miniBotSleepEye, { borderBottomColor: colors.eyeColor }]} />
+                <View style={[styles.miniBotSleepEye, { borderBottomColor: colors.eyeColor }]} />
+              </>
+            ) : (
+              <>
+                <View style={[styles.miniBotEye, { backgroundColor: colors.eyeColor }]} />
+                <View style={[styles.miniBotSmile, { borderBottomColor: colors.eyeColor }]} />
+                <View style={[styles.miniBotEye, { backgroundColor: colors.eyeColor }]} />
+              </>
+            )}
           </View>
         </View>
         <View style={[styles.miniBotChest, { backgroundColor: colors.faceColor }]} />
@@ -122,15 +193,18 @@ function MiniPersonaAvatar({ colors, persona }: MiniPersonaAvatarProps) {
 }
 
 export default function CompanionScreen() {
+  const params = useLocalSearchParams<{ closeoutPrompt?: string | string[] }>();
   const theme = useAppTheme();
   const { height: windowHeight } = useWindowDimensions();
-  const today = useMemo(() => getLocalDateKey(), []);
+  const [today, setToday] = useState(() => getLocalDateKey());
   const yesterday = useMemo(() => getPreviousDateKey(today), [today]);
   const fallbackMessages = useMemo(
     () => [createCompanionMessage('assistant', COMPANION_WELCOME_TEXT)],
     []
   );
   const entries = useCompanionStore((state) => state.entries);
+  const tasks = useTaskStore((state) => state.tasks);
+  const journalEntries = useJournalStore((state) => state.entries);
   const ensureDay = useCompanionStore((state) => state.ensureDay);
   const addMessage = useCompanionStore((state) => state.addMessage);
   const addSummary = useCompanionStore((state) => state.addSummary);
@@ -138,7 +212,17 @@ export default function CompanionScreen() {
   const avatarColors = usePreferencesStore((state) => state.avatarColors);
   const avatarPersona = usePreferencesStore((state) => state.avatarPersona);
   const companionMemoryEnabled = usePreferencesStore((state) => state.companionMemoryEnabled);
+  const setCompanionMemoryEnabled = usePreferencesStore((state) => state.setCompanionMemoryEnabled);
+  const aiTaskContextEnabled = usePreferencesStore((state) => state.aiTaskContextEnabled);
+  const aiJournalContextEnabled = usePreferencesStore((state) => state.aiJournalContextEnabled);
+  const aiCompanionContextEnabled = usePreferencesStore((state) => state.aiCompanionContextEnabled);
+  const reducedMotion = usePreferencesStore((state) => state.reducedMotion);
   const markHomeGuideFeatureVisited = usePreferencesStore((state) => state.markHomeGuideFeatureVisited);
+  const glowBalance = useRewardStore((state) => state.glowBalance);
+  const chargePersona = useRewardStore((state) => state.chargePersona);
+  const hasActivePersonaCharge = useRewardStore((state) => state.hasActivePersonaCharge);
+  const getPersonaChargeRemainingMs = useRewardStore((state) => state.getPersonaChargeRemainingMs);
+  const spendEnergy = useRewardStore((state) => state.spendEnergy);
   const todayEntry = entries[today];
   const messages = todayEntry?.messages ?? fallbackMessages;
   const [avatarComponents, setAvatarComponents] =
@@ -151,15 +235,29 @@ export default function CompanionScreen() {
   const [isReviewLoading, setIsReviewLoading] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<CompanionChatSummary | null>(null);
   const [reviewError, setReviewError] = useState('');
+  const [energyModalMode, setEnergyModalMode] = useState<'confirm' | 'empty' | null>(null);
+  const [energyModalFeature, setEnergyModalFeature] = useState('Wenwen chat');
+  const [lastFailedPrompt, setLastFailedPrompt] = useState('');
+  const [chargeClock, setChargeClock] = useState(() => Date.now());
   const chatScrollRef = useRef<ScrollView | null>(null);
   const inputRef = useRef<TextInput | null>(null);
+  const handledCloseoutPromptRef = useRef('');
+  const pendingEnergyActionRef = useRef<(() => void) | null>(null);
+  const reviewRequestIdRef = useRef(0);
   const { isVisible: isKeyboardVisible } = useKeyboardState();
   const voiceRecorder = useVoiceCheckInRecorder();
   const avatarScale = useRef(new Animated.Value(1)).current;
   const avatarTranslateY = useRef(new Animated.Value(0)).current;
   const avatarRotate = useRef(new Animated.Value(0)).current;
   const avatarGlow = useRef(new Animated.Value(0)).current;
+  const floatingBubble = useRef(new Animated.Value(0)).current;
   const lastAnimatedMessageIdRef = useRef('');
+  const personaChargeRemainingMs = getPersonaChargeRemainingMs(chargeClock);
+  const isPersonaCharged = hasActivePersonaCharge(chargeClock);
+  const canChargePersona = glowBalance >= PERSONA_CHARGE_COST;
+  const chargeStatusText = isPersonaCharged
+    ? `Charged · ${formatChargeRemaining(personaChargeRemainingMs)}`
+    : 'Needs charge';
   const canSend = input.trim().length > 0 && !isSending && !isTranscribingVoice;
   const chatPanelHeight = isKeyboardVisible
     ? Math.min(Math.max(windowHeight * 0.34, 280), 390)
@@ -178,9 +276,24 @@ export default function CompanionScreen() {
       accessibilityLabel="Wenwen persona"
       style={[styles.messageAvatar, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}
     >
-      <MiniPersonaAvatar colors={selectedColors} persona={selectedPersona} />
+      <MiniPersonaAvatar colors={selectedColors} persona={selectedPersona} isAsleep={!isPersonaCharged} />
     </View>
   );
+
+  useEffect(() => {
+    const closeoutPrompt = Array.isArray(params.closeoutPrompt) ? params.closeoutPrompt[0] : params.closeoutPrompt;
+    const cleanCloseoutPrompt = closeoutPrompt?.trim() ?? '';
+    if (!cleanCloseoutPrompt || handledCloseoutPromptRef.current === cleanCloseoutPrompt) return;
+
+    handledCloseoutPromptRef.current = cleanCloseoutPrompt;
+    setInput(cleanCloseoutPrompt);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [params.closeoutPrompt]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setChargeClock(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const historyKeys = useMemo(() => {
     return Object.keys(entries)
@@ -194,9 +307,21 @@ export default function CompanionScreen() {
   const reviewEntry = reviewDateKey ? entries[reviewDateKey] : undefined;
   const reviewMessages = reviewEntry?.messages ?? [];
   const userMessageCount = messages.filter((message) => message.role === 'user').length;
+  const floatingBubbleText = useMemo(
+    () => buildFloatingBubbleText({ tasks, journalEntry: journalEntries[today], messages }),
+    [journalEntries, messages, tasks, today]
+  );
   const avatarRotateInterpolate = avatarRotate.interpolate({
     inputRange: [-1, 1],
     outputRange: ['-5deg', '5deg'],
+  });
+  const floatingBubbleY = floatingBubble.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -8],
+  });
+  const floatingBubbleOpacity = floatingBubble.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [0.88, 1, 0.88],
   });
 
   const runAvatarReaction = useCallback(
@@ -291,9 +416,48 @@ export default function CompanionScreen() {
   }, [markHomeGuideFeatureVisited]);
 
   useEffect(() => {
+    const refreshToday = () => setToday(getLocalDateKey());
+    const interval = setInterval(refreshToday, 60_000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refreshToday();
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!hasHydrated) return;
     ensureDay(today);
   }, [ensureDay, hasHydrated, today]);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      floatingBubble.stopAnimation();
+      floatingBubble.setValue(0);
+      return;
+    }
+
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatingBubble, {
+          toValue: 1,
+          duration: 1700,
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatingBubble, {
+          toValue: 0,
+          duration: 1700,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    animation.start();
+    return () => animation.stop();
+  }, [floatingBubble, reducedMotion]);
 
   useEffect(() => {
     const load = async () => {
@@ -350,13 +514,52 @@ export default function CompanionScreen() {
       router.replace('/journal');
       return;
     }
-    if (tab === 'settings') {
-      router.replace('/settings');
+    if (tab === 'profile') {
+      router.replace('/profile');
     }
+  };
+
+  const requestPersonaCharge = useCallback((featureLabel: string, onCharged: () => void) => {
+    const rewardState = useRewardStore.getState();
+    if (rewardState.hasActivePersonaCharge()) {
+      onCharged();
+      return;
+    }
+
+    setEnergyModalFeature(featureLabel);
+    pendingEnergyActionRef.current = onCharged;
+
+    if (rewardState.glowBalance < PERSONA_CHARGE_COST) {
+      setEnergyModalMode('empty');
+      return;
+    }
+
+    setEnergyModalMode('confirm');
+  }, []);
+
+  const closeEnergyModal = () => {
+    setEnergyModalMode(null);
+    pendingEnergyActionRef.current = null;
+  };
+
+  const handleConfirmEnergyUse = () => {
+    const charged = useRewardStore.getState().chargePersona();
+    if (!charged) {
+      setEnergyModalMode('empty');
+      return;
+    }
+
+    const pendingAction = pendingEnergyActionRef.current;
+    setEnergyModalMode(null);
+    pendingEnergyActionRef.current = null;
+    setChargeClock(Date.now());
+    pendingAction?.();
   };
 
   const openReviewForDate = useCallback(
     async (dateKey: string) => {
+      const requestId = reviewRequestIdRef.current + 1;
+      reviewRequestIdRef.current = requestId;
       const entry = useCompanionStore.getState().entries[dateKey];
       if (!hasConversation(entry)) return;
 
@@ -369,6 +572,7 @@ export default function CompanionScreen() {
       const existingSummary = getMatchingSummary(entry, summaryMessages);
       if (existingSummary) {
         setReviewSummary(existingSummary);
+        setIsReviewLoading(false);
         return;
       }
 
@@ -378,6 +582,8 @@ export default function CompanionScreen() {
         const result = await generateCompanionSummary({
           dateKey,
           messages: summaryMessages,
+        }, {
+          includeCompanionContext: aiCompanionContextEnabled,
         });
         const summary = addSummary({
           dateKey,
@@ -385,37 +591,129 @@ export default function CompanionScreen() {
           body: result.body,
           messages: summaryMessages,
         });
+        if (reviewRequestIdRef.current !== requestId) return;
         setReviewSummary(summary);
       } catch (error) {
+        if (reviewRequestIdRef.current !== requestId) return;
         const message = error instanceof Error ? error.message : 'Wenwen could not summarize this chat yet.';
         setReviewError(message);
       } finally {
-        setIsReviewLoading(false);
+        if (reviewRequestIdRef.current === requestId) {
+          setIsReviewLoading(false);
+        }
       }
     },
-    [addSummary]
+    [addSummary, aiCompanionContextEnabled]
   );
+
+  const handleOpenReviewForDate = useCallback(
+    (dateKey: string) => {
+      requestPersonaCharge('Wenwen review', () => {
+        openReviewForDate(dateKey).catch(() => undefined);
+      });
+    },
+    [openReviewForDate, requestPersonaCharge]
+  );
+
+  const handleDeepReview = () => {
+    if (!reviewDateKey || isReviewLoading) return;
+
+    requestPersonaCharge('deeper Wenwen review', async () => {
+      const entry = useCompanionStore.getState().entries[reviewDateKey];
+      if (!hasConversation(entry)) return;
+
+      if (useRewardStore.getState().glowBalance < DEEP_REVIEW_COST) {
+        Alert.alert(
+          'Energy needed',
+          `A deeper Wenwen review costs ${DEEP_REVIEW_COST} ${REWARD_CURRENCY_NAME}.`
+        );
+        return;
+      }
+
+      const didSpend = spendEnergy(DEEP_REVIEW_COST);
+      if (!didSpend) return;
+
+      const requestId = reviewRequestIdRef.current + 1;
+      reviewRequestIdRef.current = requestId;
+      const summaryMessages = entry?.messages ?? [];
+      setReviewError('');
+      setIsReviewLoading(true);
+
+      try {
+        const result = await generateCompanionSummary({
+          dateKey: reviewDateKey,
+          messages: summaryMessages,
+        }, {
+          includeCompanionContext: aiCompanionContextEnabled,
+          depth: 'deep',
+        });
+        const summary = addSummary({
+          dateKey: reviewDateKey,
+          title: result.title,
+          body: result.body,
+          messages: summaryMessages,
+        });
+        if (reviewRequestIdRef.current !== requestId) return;
+        setReviewSummary(summary);
+      } catch (error) {
+        if (reviewRequestIdRef.current !== requestId) return;
+        const message = error instanceof Error ? error.message : 'Wenwen could not write the deeper review yet.';
+        setReviewError(message);
+      } finally {
+        if (reviewRequestIdRef.current === requestId) {
+          setIsReviewLoading(false);
+        }
+      }
+    });
+  };
+
+  const handleChargePersona = () => {
+    const charged = chargePersona();
+    if (!charged) {
+      Alert.alert(
+        'No Energy yet',
+        'Wenwen is asleep. Complete tasks, write a journal entry, or check in first to earn Energy.'
+      );
+      return;
+    }
+
+    setChargeClock(Date.now());
+  };
 
   const sendMessageText = async (rawText: string, shouldClearInput = false) => {
     const cleanInput = clampText(rawText, INPUT_LIMITS.companionMessage).trim();
     if (!cleanInput || isSending) return;
+    if (!useRewardStore.getState().hasActivePersonaCharge()) {
+      requestPersonaCharge('Wenwen chat', () => {
+        sendMessageText(rawText, shouldClearInput).catch(() => undefined);
+      });
+      return;
+    }
 
     const userMessage = createCompanionMessage('user', cleanInput);
     const nextMessages = [...messages, userMessage];
     addMessage(today, userMessage);
+    setLastFailedPrompt('');
     if (shouldClearInput) {
       setInput('');
     }
     setIsSending(true);
 
     try {
-      const memoryContext = companionMemoryEnabled ? buildCompanionMemoryContext(today) : '';
+      const memoryContext = companionMemoryEnabled
+        ? buildCompanionMemoryContext(today, {
+            includeTasks: aiTaskContextEnabled,
+            includeJournal: aiJournalContextEnabled,
+            includeCompanionChats: aiCompanionContextEnabled,
+          })
+        : '';
       const reply = await generateCompanionReply(nextMessages, {
         persona: selectedPersona,
         memoryContext,
       });
       addMessage(today, createCompanionMessage('assistant', reply));
     } catch (error) {
+      setLastFailedPrompt(cleanInput);
       const message = error instanceof Error ? error.message : 'Unable to reach Wenwen right now.';
       Alert.alert('Try again', message);
     } finally {
@@ -427,8 +725,48 @@ export default function CompanionScreen() {
     await sendMessageText(input, true);
   };
 
+  const handleRetryFailedReply = async () => {
+    if (!lastFailedPrompt || isSending) return;
+    if (!useRewardStore.getState().hasActivePersonaCharge()) {
+      requestPersonaCharge('Wenwen chat', () => {
+        handleRetryFailedReply().catch(() => undefined);
+      });
+      return;
+    }
+
+    setIsSending(true);
+    try {
+      const entry = useCompanionStore.getState().entries[today];
+      const retryMessages = entry?.messages ?? messages;
+      const memoryContext = companionMemoryEnabled
+        ? buildCompanionMemoryContext(today, {
+            includeTasks: aiTaskContextEnabled,
+            includeJournal: aiJournalContextEnabled,
+            includeCompanionChats: aiCompanionContextEnabled,
+          })
+        : '';
+      const reply = await generateCompanionReply(retryMessages, {
+        persona: selectedPersona,
+        memoryContext,
+      });
+      addMessage(today, createCompanionMessage('assistant', reply));
+      setLastFailedPrompt('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to reach Wenwen right now.';
+      Alert.alert('Try again', message);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handleToggleVoiceMessage = async () => {
     if (isSending || isTranscribingVoice || voiceRecorder.isPreparing) return;
+    if (!isPersonaCharged) {
+      requestPersonaCharge('voice chat', () => {
+        handleToggleVoiceMessage().catch(() => undefined);
+      });
+      return;
+    }
 
     try {
       if (!voiceRecorder.isRecording) {
@@ -468,6 +806,18 @@ export default function CompanionScreen() {
     inputRef.current?.focus();
   };
 
+  const handleCancelVoiceMessage = async () => {
+    try {
+      await voiceRecorder.cancelRecording();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to cancel recording right now.';
+      Alert.alert('Voice message failed', message);
+    }
+  };
+
+  const recordingSeconds = Math.max(0, Math.floor(voiceRecorder.durationMillis / 1000));
+  const recordingDuration = `${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, '0')}`;
+
   return (
     <KeyboardAvoidingView
       style={[styles.root, { backgroundColor: theme.background }]}
@@ -483,13 +833,62 @@ export default function CompanionScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.screenTitle, { color: theme.subtle }]}>Companion</Text>
-        <Text style={[styles.heroTitle, { color: theme.text }]}>Talk with Wenwen</Text>
-        <Text style={[styles.heroSubtitle, { color: theme.muted }]}>
-          Chat about your day, tasks, or what you want to sort out.
-        </Text>
+        <View style={styles.topActionRow}>
+          <GlowBalancePill />
+        </View>
+
+        <View
+          style={[
+            styles.chargeCard,
+            {
+              backgroundColor: isPersonaCharged ? theme.primarySoft : theme.surface,
+              borderColor: isPersonaCharged ? theme.primary : theme.border,
+            },
+          ]}
+        >
+          <View style={styles.chargeTextWrap}>
+            <Text style={[styles.chargeTitle, { color: theme.textStrong }]}>Persona charge</Text>
+            <Text style={[styles.chargeMeta, { color: theme.muted }]}>
+              {chargeStatusText}. 1 {REWARD_CURRENCY_NAME} wakes Wenwen for {PERSONA_CHARGE_HOURS} hours.
+            </Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Charge persona"
+            onPress={handleChargePersona}
+            style={[
+              styles.chargeButton,
+              { backgroundColor: canChargePersona ? theme.primary : theme.softSurface },
+              !canChargePersona && styles.chargeButtonDisabled,
+            ]}
+          >
+            <Ionicons name="flash" size={15} color={canChargePersona ? '#FFFFFF' : theme.subtle} />
+            <Text style={[styles.chargeButtonText, { color: canChargePersona ? '#FFFFFF' : theme.subtle }]}>
+              Charge
+            </Text>
+          </Pressable>
+        </View>
 
         <View style={styles.avatarStage}>
+          <Animated.View
+            pointerEvents="none"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+            style={[
+              styles.floatingBubble,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.softBorder,
+                opacity: floatingBubbleOpacity,
+                transform: [{ translateY: floatingBubbleY }],
+              },
+            ]}
+          >
+            <Text numberOfLines={2} style={[styles.floatingBubbleText, { color: theme.primaryStrong }]}>
+              {floatingBubbleText}
+            </Text>
+            <View style={[styles.floatingBubbleTail, { backgroundColor: theme.surface, borderColor: theme.softBorder }]} />
+          </Animated.View>
           <Animated.View
             pointerEvents="none"
             style={[
@@ -520,6 +919,7 @@ export default function CompanionScreen() {
                   faceColor={avatarColors?.faceColor ?? DEFAULT_AVATAR_COLORS.faceColor}
                   bodyColor={avatarColors?.bodyColor ?? DEFAULT_AVATAR_COLORS.bodyColor}
                   presentation="peek"
+                  isAsleep={!isPersonaCharged}
                 />
               ) : (
                 <Text style={[styles.avatarFallback, { color: theme.primaryStrong }]}>
@@ -542,22 +942,56 @@ export default function CompanionScreen() {
           ]}
         >
           <View style={styles.chatHeader}>
-            <View>
+            <View style={styles.chatHeaderText}>
               <Text style={[styles.chatTitle, { color: theme.textStrong }]}>Today&apos;s chat</Text>
               <Text style={[styles.chatMeta, { color: theme.muted }]}>
-                {userMessageCount === 0 ? 'No message yet' : `${userMessageCount} message${userMessageCount === 1 ? '' : 's'} from you`}
+                {!isPersonaCharged
+                  ? 'Wenwen is asleep'
+                  : userMessageCount === 0 ? 'No message yet' : `${userMessageCount} message${userMessageCount === 1 ? '' : 's'} from you`}
               </Text>
             </View>
-            {hasConversation(todayEntry) && (
+            <View style={styles.chatHeaderActions}>
               <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Summarize today's chat"
-                onPress={() => openReviewForDate(today)}
-                style={[styles.summaryIconButton, { backgroundColor: theme.primarySoft }]}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: companionMemoryEnabled }}
+                accessibilityLabel={companionMemoryEnabled ? 'Turn companion memory off' : 'Turn companion memory on'}
+                onPress={() => setCompanionMemoryEnabled(!companionMemoryEnabled)}
+                style={[
+                  styles.memoryPill,
+                  {
+                    backgroundColor: companionMemoryEnabled ? theme.primarySoft : theme.surface,
+                    borderColor: companionMemoryEnabled ? theme.primary : theme.softBorder,
+                  },
+                ]}
               >
-                <Ionicons name="sparkles-outline" size={18} color={theme.primaryStrong} />
+                <Ionicons
+                  name={companionMemoryEnabled ? 'file-tray-full-outline' : 'file-tray-outline'}
+                  size={14}
+                  color={companionMemoryEnabled ? theme.primaryStrong : theme.subtle}
+                />
+                <Text style={[styles.memoryPillText, { color: companionMemoryEnabled ? theme.primaryStrong : theme.muted }]}>
+                  Memory {companionMemoryEnabled ? 'on' : 'off'}
+                </Text>
               </Pressable>
-            )}
+              {hasConversation(todayEntry) && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Summarize today's chat"
+                  onPress={() => handleOpenReviewForDate(today)}
+                  style={[
+                    styles.summaryButton,
+                    { backgroundColor: isPersonaCharged ? theme.primarySoft : theme.softSurface },
+                  ]}
+                >
+                  <Ionicons
+                    name={isPersonaCharged ? 'sparkles-outline' : 'lock-closed-outline'}
+                    size={18}
+                    color={isPersonaCharged ? theme.primaryStrong : theme.subtle}
+                  />
+                  <Text style={[styles.summaryButtonText, { color: isPersonaCharged ? theme.primaryStrong : theme.muted }]}>Review</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
 
           <ScrollView
@@ -603,7 +1037,38 @@ export default function CompanionScreen() {
                 </View>
               </View>
             )}
+            {!!lastFailedPrompt && !isSending && (
+              <View style={[styles.retryBlock, { backgroundColor: theme.surface, borderColor: theme.softBorder }]}>
+                <Text style={[styles.retryText, { color: theme.muted }]}>Wenwen did not answer that message.</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Retry Wenwen reply"
+                  onPress={handleRetryFailedReply}
+                  style={[styles.retryButton, { backgroundColor: theme.primarySoft }]}
+                >
+                  <Ionicons name="refresh" size={14} color={theme.primaryStrong} />
+                  <Text style={[styles.retryButtonText, { color: theme.primaryStrong }]}>Try again</Text>
+                </Pressable>
+              </View>
+            )}
           </ScrollView>
+
+          {voiceRecorder.isRecording && (
+            <View style={[styles.recordingBar, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
+              <View style={styles.recordingStatus}>
+                <View style={[styles.recordingDot, { backgroundColor: theme.primary }]} />
+                <Text style={[styles.recordingText, { color: theme.textStrong }]}>Recording {recordingDuration}</Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Cancel voice message"
+                onPress={handleCancelVoiceMessage}
+                style={[styles.cancelRecordingButton, { backgroundColor: theme.softSurface }]}
+              >
+                <Text style={[styles.cancelRecordingText, { color: theme.muted }]}>Cancel</Text>
+              </Pressable>
+            </View>
+          )}
 
           <View style={[styles.composerBar, { backgroundColor: theme.surface, borderColor: theme.softBorder }]}>
             <TextInput
@@ -647,7 +1112,7 @@ export default function CompanionScreen() {
               onPress={handleSend}
               style={[styles.sendButton, { backgroundColor: canSend ? theme.primary : theme.softSurface }]}
             >
-              <Ionicons name="send" size={16} color={canSend ? '#FFFFFF' : theme.subtle} />
+              <Ionicons name={isPersonaCharged ? 'send' : 'flash'} size={16} color={canSend ? '#FFFFFF' : theme.subtle} />
             </Pressable>
           </View>
         </View>
@@ -655,14 +1120,14 @@ export default function CompanionScreen() {
         <View style={styles.historyHeader}>
           <View>
             <Text style={[styles.historyTitle, { color: theme.textStrong }]}>Chat history</Text>
-            <Text style={[styles.historySubtitle, { color: theme.muted }]}>Daily conversations and AI reviews.</Text>
+            <Text style={[styles.historySubtitle, { color: theme.muted }]}>Daily conversations and Wenwen reviews.</Text>
           </View>
           {hasYesterdayReview && (
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel="Show yesterday chat review"
               style={[styles.historyAction, { backgroundColor: theme.primarySoft }]}
-              onPress={() => openReviewForDate(yesterday)}
+              onPress={() => handleOpenReviewForDate(yesterday)}
             >
               <Text style={[styles.historyActionText, { color: theme.primaryStrong }]}>Yesterday</Text>
             </TouchableOpacity>
@@ -686,7 +1151,12 @@ export default function CompanionScreen() {
             </TouchableOpacity>
           </View>
         ) : (
-          <View style={styles.historyList}>
+          <ScrollView
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={historyKeys.length > HISTORY_VISIBLE_ITEM_COUNT}
+            style={styles.historyListScroll}
+            contentContainerStyle={styles.historyList}
+          >
             {historyKeys.map((dateKey) => {
               const entry = entries[dateKey];
               const messagesForDay = entry?.messages ?? [];
@@ -697,8 +1167,8 @@ export default function CompanionScreen() {
                 <Pressable
                   key={dateKey}
                   accessibilityRole="button"
-                  accessibilityLabel={`Open chat review for ${formatDateLabel(dateKey)}`}
-                  onPress={() => openReviewForDate(dateKey)}
+                  accessibilityLabel={`Open daily review and chat log for ${formatDateLabel(dateKey)}`}
+                  onPress={() => handleOpenReviewForDate(dateKey)}
                   style={({ pressed }) => [
                     styles.historyCard,
                     { backgroundColor: theme.surface, borderColor: theme.border, shadowColor: theme.shadow },
@@ -724,7 +1194,7 @@ export default function CompanionScreen() {
                 </Pressable>
               );
             })}
-          </View>
+          </ScrollView>
         )}
       </ScrollView>
 
@@ -741,7 +1211,7 @@ export default function CompanionScreen() {
                 <Text style={[styles.modalKicker, { color: theme.subtle }]}>
                   {reviewDateKey ? formatDateLabel(reviewDateKey) : 'Companion'}
                 </Text>
-                <Text style={[styles.modalTitle, { color: theme.text }]}>Daily review</Text>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Review and chat log</Text>
               </View>
               <Pressable
                 accessibilityRole="button"
@@ -760,15 +1230,28 @@ export default function CompanionScreen() {
                   <Text style={[styles.loadingText, { color: theme.muted }]}>Writing the review...</Text>
                 </View>
               ) : reviewSummary ? (
-                <View style={[styles.summaryCard, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
-                  <Text style={[styles.summaryTitle, { color: theme.text }]}>{reviewSummary.title}</Text>
-                  <Text style={[styles.summaryBody, { color: theme.muted }]}>{reviewSummary.body}</Text>
-                </View>
+                <>
+                  <View style={[styles.summaryCard, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
+                    <Text style={[styles.summaryTitle, { color: theme.text }]}>{reviewSummary.title}</Text>
+                    <Text style={[styles.summaryBody, { color: theme.muted }]}>{reviewSummary.body}</Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Spend Energy for a deeper Wenwen review"
+                    onPress={handleDeepReview}
+                    style={[styles.deepReviewButton, { backgroundColor: theme.surface, borderColor: theme.softBorder }]}
+                  >
+                    <Ionicons name="sparkles-outline" size={16} color={theme.primaryStrong} />
+                    <Text style={[styles.deepReviewButtonText, { color: theme.primaryStrong }]}>
+                      Deep review · {DEEP_REVIEW_COST} {REWARD_CURRENCY_NAME}
+                    </Text>
+                  </Pressable>
+                </>
               ) : (
                 <View style={[styles.summaryCard, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}>
                   <Text style={[styles.summaryTitle, { color: theme.text }]}>Saved for later</Text>
                   <Text style={[styles.summaryBody, { color: theme.muted }]}>
-                    {reviewError || 'The AI review could not be written yet, but the chat is saved.'}
+                    {reviewError || 'The Wenwen review could not be written yet, but the chat is saved.'}
                   </Text>
                 </View>
               )}
@@ -789,6 +1272,51 @@ export default function CompanionScreen() {
         </View>
       </Modal>
 
+      <Modal
+        animationType="fade"
+        transparent
+        visible={Boolean(energyModalMode)}
+        onRequestClose={closeEnergyModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.energyModalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={[styles.energyModalIcon, { backgroundColor: theme.primarySoft }]}>
+              <Ionicons name="flash-off-outline" size={22} color={theme.primaryStrong} />
+            </View>
+            <Text style={[styles.energyModalTitle, { color: theme.textStrong }]}>Wenwen has no energy</Text>
+            <Text style={[styles.energyModalBody, { color: theme.muted }]}>
+              {energyModalMode === 'confirm'
+                ? `Spend ${PERSONA_CHARGE_COST} ${REWARD_CURRENCY_NAME} to charge Wenwen for ${PERSONA_CHARGE_HOURS} hours and use ${energyModalFeature}.`
+                : 'Wenwen cannot chat or review right now. Complete tasks, write a journal entry, or check in first to earn Energy.'}
+            </Text>
+
+            <View style={styles.energyModalActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={energyModalMode === 'confirm' ? 'Cancel charging Wenwen' : 'Close energy message'}
+                onPress={closeEnergyModal}
+                style={[styles.energySecondaryButton, { backgroundColor: theme.softSurface }]}
+              >
+                <Text style={[styles.energySecondaryButtonText, { color: theme.muted }]}>
+                  {energyModalMode === 'confirm' ? 'Cancel' : 'Got it'}
+                </Text>
+              </Pressable>
+              {energyModalMode === 'confirm' && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Use Energy to charge Wenwen"
+                  onPress={handleConfirmEnergyUse}
+                  style={[styles.energyPrimaryButton, { backgroundColor: theme.primary }]}
+                >
+                  <Ionicons name="flash" size={16} color="#FFFFFF" />
+                  <Text style={styles.energyPrimaryButtonText}>Use Energy</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {!isKeyboardVisible && (
         <View style={styles.bottomTabWrap}>
           <BottomTabPlaceholder activeKey="companion" onTabPress={handleTabPress} />
@@ -803,35 +1331,97 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: 56,
+    paddingTop: 32,
     paddingHorizontal: 20,
     paddingBottom: 124,
+  },
+  topActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 2,
+  },
+  chargeCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  chargeTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  chargeTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  chargeMeta: {
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  chargeButton: {
+    minHeight: 38,
+    borderRadius: 19,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  chargeButtonDisabled: {
+    opacity: 0.72,
+  },
+  chargeButtonText: {
+    fontSize: 11,
+    fontWeight: '900',
   },
   scrollContentKeyboard: {
     paddingBottom: 36,
   },
-  screenTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  heroTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    marginTop: 8,
-  },
-  heroSubtitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    lineHeight: 20,
-    marginTop: 4,
-    marginBottom: 14,
-  },
   avatarStage: {
     alignItems: 'center',
+    marginTop: 10,
     marginBottom: 14,
     position: 'relative',
+  },
+  floatingBubble: {
+    position: 'absolute',
+    right: 38,
+    top: -14,
+    minHeight: 34,
+    maxWidth: 210,
+    borderRadius: 17,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#030711',
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+    zIndex: 3,
+  },
+  floatingBubbleText: {
+    fontSize: 12,
+    fontWeight: '900',
+    lineHeight: 16,
+    textAlign: 'center',
+  },
+  floatingBubbleTail: {
+    position: 'absolute',
+    left: 18,
+    bottom: -5,
+    width: 10,
+    height: 10,
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    transform: [{ rotate: '45deg' }],
   },
   avatarMotion: {
     width: 172,
@@ -867,10 +1457,11 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
+    gap: 10,
+    marginBottom: 12,
+  },
+  chatHeaderText: {
+    minWidth: 0,
   },
   chatTitle: {
     fontSize: 16,
@@ -881,12 +1472,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
-  summaryIconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  chatHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  memoryPill: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 5,
+  },
+  memoryPillText: {
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  summaryButton: {
+    flex: 1,
+    height: 38,
+    borderRadius: 19,
+    paddingHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  summaryButtonText: {
+    fontSize: 11,
+    fontWeight: '900',
   },
   chatScroll: {
     flex: 1,
@@ -950,6 +1569,13 @@ const styles = StyleSheet.create({
     width: 4,
     height: 7,
     borderRadius: 3,
+  },
+  miniBotSleepEye: {
+    width: 7,
+    height: 5,
+    borderBottomWidth: 1.8,
+    borderRadius: 6,
+    marginHorizontal: 1,
   },
   miniBotSmile: {
     width: 8,
@@ -1020,6 +1646,20 @@ const styles = StyleSheet.create({
     left: 8,
   },
   miniCatEyeRight: {
+    right: 8,
+  },
+  miniCatSleepEye: {
+    position: 'absolute',
+    width: 8,
+    height: 5,
+    borderBottomWidth: 1.8,
+    borderRadius: 6,
+    top: 9,
+  },
+  miniCatSleepEyeLeft: {
+    left: 8,
+  },
+  miniCatSleepEyeRight: {
     right: 8,
   },
   miniCatPupil: {
@@ -1094,6 +1734,69 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     lineHeight: 20,
+  },
+  retryBlock: {
+    alignSelf: 'flex-start',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 10,
+    gap: 8,
+    maxWidth: '82%',
+  },
+  retryText: {
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  retryButton: {
+    minHeight: 32,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  retryButtonText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  recordingBar: {
+    minHeight: 42,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  recordingStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  recordingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  recordingText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  cancelRecordingButton: {
+    minHeight: 30,
+    borderRadius: 15,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelRecordingText: {
+    fontSize: 11,
+    fontWeight: '900',
   },
   composerBar: {
     minHeight: 48,
@@ -1193,12 +1896,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
+  historyListScroll: {
+    maxHeight: HISTORY_LIST_MAX_HEIGHT,
+  },
   historyList: {
-    gap: 10,
+    gap: HISTORY_CARD_GAP,
   },
   historyCard: {
     borderRadius: 18,
     borderWidth: 1,
+    minHeight: HISTORY_CARD_MIN_HEIGHT,
     padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1303,6 +2010,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 8,
   },
+  deepReviewButton: {
+    minHeight: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  deepReviewButtonText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
   reviewSection: {
     borderTopWidth: 1,
     paddingTop: 12,
@@ -1324,6 +2045,70 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     fontWeight: '600',
+  },
+  energyModalCard: {
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 18,
+    alignItems: 'center',
+    shadowColor: '#28384E',
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 16 },
+    elevation: 8,
+  },
+  energyModalIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  energyModalTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  energyModalBody: {
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 21,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  energyModalActions: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 16,
+  },
+  energySecondaryButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  energySecondaryButtonText: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  energyPrimaryButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 12,
+  },
+  energyPrimaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
   },
   bottomTabWrap: {
     position: 'absolute',

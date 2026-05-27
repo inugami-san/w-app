@@ -4,7 +4,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { createDefaultTasks } from '@/src/features/tasks/defaultTasks';
 import { useJournalStore } from '@/src/store/journal-store';
-import type { TaskItem } from '@/src/types/task';
+import { useRewardStore } from '@/src/store/reward-store';
+import type { TaskEnergy, TaskItem } from '@/src/types/task';
 import { getLocalDateKey } from '@/src/utils/date';
 import { INPUT_LIMITS, sanitizeSingleLine } from '@/src/utils/input-limits';
 
@@ -13,6 +14,7 @@ type CreateTaskInput = {
   detail?: string;
   due?: string;
   isRoutine?: boolean;
+  energy?: TaskEnergy;
 };
 
 type TaskStore = {
@@ -26,6 +28,7 @@ type TaskStore = {
   declineStarterTasks: () => void;
   addTask: (input: CreateTaskInput) => void;
   toggleTask: (id: string) => void;
+  updateTask: (id: string, input: Partial<Pick<TaskItem, 'title' | 'detail' | 'due' | 'isRoutine' | 'energy'>>) => void;
   deleteTask: (id: string) => void;
   startCompletionCooldown: (durationMs: number) => void;
   resetDailyTasks: (force?: boolean) => void;
@@ -35,6 +38,10 @@ type TaskStore = {
 
 function makeTaskId() {
   return `task-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+}
+
+function normalizeEnergy(energy: TaskEnergy | undefined): TaskEnergy {
+  return energy ?? 'medium';
 }
 
 function archiveTasksForDate(dateKey: string, tasks: TaskItem[]) {
@@ -48,6 +55,7 @@ function archiveTasksForDate(dateKey: string, tasks: TaskItem[]) {
       detail: task.detail,
       done: task.done,
       isRoutine: Boolean(task.isRoutine),
+      energy: normalizeEnergy(task.energy),
     }))
   );
 }
@@ -88,7 +96,7 @@ export const useTaskStore = create<TaskStore>()(
         set({ hasDecidedStarterTasks: true });
       },
 
-      addTask: ({ title, detail, due, isRoutine }) => {
+      addTask: ({ title, detail, due, isRoutine, energy }) => {
         const cleanTitle = sanitizeSingleLine(title, INPUT_LIMITS.taskTitle);
         if (!cleanTitle) return;
 
@@ -101,6 +109,7 @@ export const useTaskStore = create<TaskStore>()(
           due: due ? sanitizeSingleLine(due, 40) || 'Today' : 'Today',
           done: false,
           isRoutine: Boolean(isRoutine),
+          energy: normalizeEnergy(energy),
           createdAt: nowIso,
           updatedAt: nowIso,
         };
@@ -112,6 +121,11 @@ export const useTaskStore = create<TaskStore>()(
       },
 
       toggleTask: (id) => {
+        const task = get().tasks.find((item) => item.id === id);
+        if (task && !task.done) {
+          useRewardStore.getState().awardTaskCompletion(id, getLocalDateKey(new Date()));
+        }
+
         const nowIso = new Date().toISOString();
         set((state) => ({
           tasks: state.tasks.map((task) =>
@@ -119,6 +133,25 @@ export const useTaskStore = create<TaskStore>()(
               ? { ...task, done: !task.done, updatedAt: nowIso }
               : task
           ),
+        }));
+      },
+
+      updateTask: (id, input) => {
+        const nowIso = new Date().toISOString();
+        set((state) => ({
+          tasks: state.tasks.map((task) => {
+            if (task.id !== id) return task;
+
+            return {
+              ...task,
+              title: input.title === undefined ? task.title : sanitizeSingleLine(input.title, INPUT_LIMITS.taskTitle) || task.title,
+              detail: input.detail === undefined ? task.detail : sanitizeSingleLine(input.detail, INPUT_LIMITS.taskDetail) || task.detail,
+              due: input.due === undefined ? task.due : sanitizeSingleLine(input.due, 40) || task.due,
+              isRoutine: input.isRoutine === undefined ? task.isRoutine : input.isRoutine,
+              energy: input.energy === undefined ? normalizeEnergy(task.energy) : input.energy,
+              updatedAt: nowIso,
+            };
+          }),
         }));
       },
 

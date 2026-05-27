@@ -68,18 +68,29 @@ export async function generateCompanionSummary(
     dateKey: string;
     messages: CompanionMessage[];
   },
-  options?: { onError?: GeminiErrorCallback }
+  options?: { onError?: GeminiErrorCallback; includeCompanionContext?: boolean; depth?: 'normal' | 'deep' }
 ): Promise<CompanionSummaryResult> {
+  const fallback = createFallbackCompanionSummary(input);
+  if (options?.includeCompanionContext === false) {
+    return fallback;
+  }
+
   const conversation = input.messages
     .map((message) => `${message.role === 'user' ? 'User' : 'Wenwen'}: ${message.text}`)
     .join('\n');
 
   const prompt = buildWenwenPrompt([
-    'Task: Write a daily companion review for the user based on this Wenwen chat.',
+    options?.depth === 'deep'
+      ? 'Task: Write a deeper companion review for the user based on this Wenwen chat.'
+      : 'Task: Write a daily companion review for the user based on this Wenwen chat.',
     'Review rules:',
     '- Mention what the user talked through without diagnosing, overpraising, or overpromising.',
-    '- Note one practical takeaway when the conversation supports it.',
-    '- Keep the body to one short paragraph with 3-5 sentences.',
+    options?.depth === 'deep'
+      ? '- Include two practical takeaways when the conversation supports them, plus one small next step.'
+      : '- Note one practical takeaway when the conversation supports it.',
+    options?.depth === 'deep'
+      ? '- Keep the body to two short paragraphs with 4-7 total sentences.'
+      : '- Keep the body to one short paragraph with 3-5 sentences.',
     '- Use a clear title, not a sentimental title.',
     'Return only valid JSON with title and body.',
     '',
@@ -88,12 +99,14 @@ export async function generateCompanionSummary(
     conversation,
     '',
     'JSON Format:',
-    '{ "title": "A clear title", "body": "One short paragraph, 3-5 sentences." }',
+    options?.depth === 'deep'
+      ? '{ "title": "A clear title", "body": "Two short paragraphs, 4-7 total sentences." }'
+      : '{ "title": "A clear title", "body": "One short paragraph, 3-5 sentences." }',
   ]);
 
   return requestGeminiWithFallback({
     prompt,
-    fallback: createFallbackCompanionSummary(input),
+    fallback,
     onError: options?.onError,
     generationConfig: {
       temperature: 0.65,

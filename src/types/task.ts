@@ -1,3 +1,5 @@
+export type TaskEnergy = 'tiny' | 'medium' | 'heavy';
+
 export type TaskItem = {
   id: string;
   title: string;
@@ -5,6 +7,7 @@ export type TaskItem = {
   due: string;
   done: boolean;
   isRoutine?: boolean;
+  energy?: TaskEnergy;
   createdAt: string;
   updatedAt: string;
 };

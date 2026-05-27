@@ -11,6 +11,7 @@ import type {
   JournalTaskSnapshot,
   MoodKey,
 } from '@/src/types/journal';
+import { useRewardStore } from '@/src/store/reward-store';
 import { clampText, INPUT_LIMITS } from '@/src/utils/input-limits';
 
 type JournalStore = {
@@ -70,6 +71,11 @@ export const useJournalStore = create<JournalStore>()(
 
       setFeelingNote: (dateKey, note) => {
         const nowIso = new Date().toISOString();
+        const cleanNote = clampText(note, INPUT_LIMITS.journalNote).trim();
+        if (cleanNote) {
+          useRewardStore.getState().awardJournalEntry(dateKey);
+        }
+
         set((state) => {
           const entry = ensureEntry(state.entries, dateKey);
           return {
@@ -77,7 +83,7 @@ export const useJournalStore = create<JournalStore>()(
               ...state.entries,
               [dateKey]: {
                 ...entry,
-                feelingNote: clampText(note, INPUT_LIMITS.journalNote).trim(),
+                feelingNote: cleanNote,
                 updatedAt: nowIso,
               },
             },
@@ -108,6 +114,10 @@ export const useJournalStore = create<JournalStore>()(
 
       setImageAttachment: (dateKey, image) => {
         const nowIso = new Date().toISOString();
+        if (image) {
+          useRewardStore.getState().awardJournalEntry(dateKey);
+        }
+
         set((state) => {
           const entry = ensureEntry(state.entries, dateKey);
           return {
