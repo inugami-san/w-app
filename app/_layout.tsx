@@ -3,7 +3,7 @@ import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -38,9 +38,8 @@ import { useJournalStore } from '@/src/store/journal-store';
 import { useLocationStore } from '@/src/store/location-store';
 import { usePreferencesStore } from '@/src/store/preferences-store';
 import {
-  PERSONA_CHARGE_COST,
-  PERSONA_CHARGE_HOURS,
   REWARD_CURRENCY_NAME,
+  WELLNESS_REVIEW_COST,
   useRewardStore,
 } from '@/src/store/reward-store';
 import { useTaskStore } from '@/src/store/task-store';
@@ -53,6 +52,66 @@ export const unstable_settings = {
 };
 
 const WELLNESS_REVIEW_TIMEOUT_MS = 8000;
+
+type AppErrorBoundaryProps = {
+  children: ReactNode;
+  theme: (typeof APP_THEME)[keyof typeof APP_THEME];
+};
+
+type AppErrorBoundaryState = {
+  hasError: boolean;
+  message: string;
+};
+
+class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
+  state: AppErrorBoundaryState = {
+    hasError: false,
+    message: '',
+  };
+
+  static getDerivedStateFromError(error: unknown): AppErrorBoundaryState {
+    return {
+      hasError: true,
+      message: error instanceof Error ? error.message : 'Something went wrong while opening this screen.',
+    };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('Screen render failed', error, info.componentStack);
+  }
+
+  handleReset = () => {
+    this.setState({ hasError: false, message: '' });
+    router.replace('/dashboard');
+  };
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+
+    const { theme } = this.props;
+    return (
+      <View style={[styles.errorFallback, { backgroundColor: theme.background }]}>
+        <View style={[styles.errorFallbackCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={[styles.errorFallbackIcon, { backgroundColor: theme.primarySoft }]}>
+            <Ionicons name="warning-outline" size={24} color={theme.primaryStrong} />
+          </View>
+          <Text style={[styles.errorFallbackTitle, { color: theme.textStrong }]}>Wenwen needs a quick reset</Text>
+          <Text style={[styles.errorFallbackBody, { color: theme.muted }]}>
+            {this.state.message || 'This screen could not open cleanly.'}
+          </Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Return home"
+            onPress={this.handleReset}
+            style={[styles.errorFallbackButton, { backgroundColor: theme.primary }]}
+          >
+            <Text style={styles.errorFallbackButtonText}>Return home</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+}
 
 function generateWellnessReviewSafely(source: ReturnType<typeof buildWellnessReviewSource>) {
   const fallback = createFallbackWellnessReview(source);
@@ -100,8 +159,7 @@ export default function RootLayout() {
   const locationHydrated = useLocationStore((state) => state.hasHydrated);
   const rewardsHydrated = useRewardStore((state) => state.hasHydrated);
   const glowBalance = useRewardStore((state) => state.glowBalance);
-  const personaChargeExpiresAt = useRewardStore((state) => state.personaChargeExpiresAt);
-  const chargePersona = useRewardStore((state) => state.chargePersona);
+  const spendEnergy = useRewardStore((state) => state.spendEnergy);
   const autoSyncStatus = useLocationStore((state) => state.autoSyncStatus);
   const addWellnessReview = useWellnessReviewStore((state) => state.addReview);
   const setLastShownWellnessPeriodKey = useWellnessReviewStore((state) => state.setLastShownPeriodKey);
@@ -113,7 +171,6 @@ export default function RootLayout() {
   const [isWellnessReviewVisible, setIsWellnessReviewVisible] = useState(false);
   const [isWellnessReviewLoading, setIsWellnessReviewLoading] = useState(false);
   const [isFeelingScaleVisible, setIsFeelingScaleVisible] = useState(false);
-  const [chargeClock, setChargeClock] = useState(() => Date.now());
   const [dismissedWellnessPeriodKey, setDismissedWellnessPeriodKey] = useState('');
   const syncedNightlyReviewSignatureRef = useRef('');
   const locationAutoSyncStartedRef = useRef(false);
@@ -145,13 +202,6 @@ export default function RootLayout() {
     wellnessReviewHydrated &&
     locationHydrated &&
     rewardsHydrated;
-  const isPersonaCharged = useMemo(
-    () => {
-      const expiresAt = Date.parse(personaChargeExpiresAt);
-      return Number.isFinite(expiresAt) && expiresAt > chargeClock;
-    },
-    [chargeClock, personaChargeExpiresAt]
-  );
   const reviewActivitySignature = useMemo(() => {
     return JSON.stringify({
       tasks: tasks.map((task) => `${task.id}:${task.updatedAt}:${task.done}`).join('|'),
@@ -190,11 +240,6 @@ export default function RootLayout() {
   useEffect(() => {
     nightlyReviewNotificationIdRef.current = nightlyReviewNotificationId;
   }, [nightlyReviewNotificationId]);
-
-  useEffect(() => {
-    const interval = setInterval(() => setChargeClock(Date.now()), 60000);
-    return () => clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     if (!tasksHydrated || !journalHydrated) return;
@@ -351,18 +396,13 @@ export default function RootLayout() {
 
     setActiveWellnessReview(null);
     setIsWellnessReviewLoading(false);
-    if (isPersonaCharged) {
-      startWellnessReviewGeneration(period);
-    }
   }, [
     dismissedWellnessPeriodKey,
     hasCompletedOnboarding,
-    isPersonaCharged,
     isWellnessReviewLoading,
     isWellnessReviewVisible,
     pendingWellnessPeriod,
     requestedWellnessPeriodKey,
-    startWellnessReviewGeneration,
     storesHydrated,
     wellnessReviews,
   ]);
@@ -414,11 +454,12 @@ export default function RootLayout() {
   const handleChargeAndWriteWellnessReview = () => {
     if (!activeWellnessPeriod) return;
 
-    if (!isPersonaCharged) {
-      const didCharge = chargePersona();
-      if (!didCharge) return;
-      setChargeClock(Date.now());
+    if (useRewardStore.getState().glowBalance < WELLNESS_REVIEW_COST) {
+      return;
     }
+
+    const didSpend = spendEnergy(WELLNESS_REVIEW_COST);
+    if (!didSpend) return;
 
     startWellnessReviewGeneration(activeWellnessPeriod);
   };
@@ -431,189 +472,201 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="login" options={loginScreenOptions} />
-          <Stack.Screen name="main" options={tabScreenOptions} />
-          <Stack.Screen name="dashboard" options={tabScreenOptions} />
-          <Stack.Screen name="journal" options={tabScreenOptions} />
-          <Stack.Screen name="journal/[dateKey]" options={tabScreenOptions} />
-          <Stack.Screen name="settings" options={tabScreenOptions} />
-          <Stack.Screen name="companion" options={tabScreenOptions} />
-          <Stack.Screen name="profile" options={tabScreenOptions} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-        </Stack>
-        <StatusBar style={isDark ? 'light' : 'dark'} />
-        <Modal
-          transparent
-          animationType="fade"
-          visible={isWellnessReviewVisible}
-          onRequestClose={closeWellnessReview}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.reviewCard, { backgroundColor: appTheme.surface, borderColor: appTheme.border }]}>
-              <View style={styles.reviewHeader}>
-                <View style={styles.reviewHeaderText}>
-                  <Text style={[styles.reviewKicker, { color: appTheme.subtle }]}>
-                    {activeWellnessPeriod?.label ?? 'Review'}
-                  </Text>
-                  <Text style={[styles.reviewTitle, { color: appTheme.text }]}>
-                    {activeWellnessPeriod?.title ?? 'Review'}
-                  </Text>
+        <AppErrorBoundary theme={appTheme}>
+          <Stack>
+            <Stack.Screen name="index" options={{ headerShown: false }} />
+            <Stack.Screen name="login" options={loginScreenOptions} />
+            <Stack.Screen name="main" options={tabScreenOptions} />
+            <Stack.Screen name="dashboard" options={tabScreenOptions} />
+            <Stack.Screen name="journal" options={tabScreenOptions} />
+            <Stack.Screen name="journal/[dateKey]" options={tabScreenOptions} />
+            <Stack.Screen name="settings" options={tabScreenOptions} />
+            <Stack.Screen name="companion" options={tabScreenOptions} />
+            <Stack.Screen name="profile" options={tabScreenOptions} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+          </Stack>
+          <StatusBar style={isDark ? 'light' : 'dark'} />
+          <Modal
+            transparent
+            animationType="fade"
+            visible={isWellnessReviewVisible}
+            onRequestClose={closeWellnessReview}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={[styles.reviewCard, { backgroundColor: appTheme.surface, borderColor: appTheme.border }]}>
+                <View style={styles.reviewHeader}>
+                  <View style={styles.reviewHeaderText}>
+                    <Text style={[styles.reviewKicker, { color: appTheme.subtle }]}>
+                      {activeWellnessPeriod?.label ?? 'Review'}
+                    </Text>
+                    <Text style={[styles.reviewTitle, { color: appTheme.text }]}>
+                      {activeWellnessPeriod?.title ?? 'Review'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Close review"
+                    onPress={closeWellnessReview}
+                    style={[styles.closeButton, { backgroundColor: appTheme.softSurface }]}
+                  >
+                    <Ionicons name="close" size={19} color={appTheme.muted} />
+                  </Pressable>
                 </View>
-                <Pressable
+
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.reviewScrollContent}>
+                  {isWellnessReviewLoading ? (
+                    <View style={styles.loadingBlock}>
+                      <ActivityIndicator color={appTheme.primaryStrong} />
+                      <Text style={[styles.loadingText, { color: appTheme.muted }]}>Writing your review...</Text>
+                    </View>
+                  ) : activeWellnessReview ? (
+                    <>
+                      <View style={[styles.summaryBlock, { backgroundColor: appTheme.primarySoft, borderColor: appTheme.softBorder }]}>
+                        <Text style={[styles.summaryTitle, { color: appTheme.textStrong }]}>{activeWellnessReview.title}</Text>
+                        <Text style={[styles.summaryBody, { color: appTheme.muted }]}>{activeWellnessReview.body}</Text>
+                      </View>
+
+                      <View style={styles.statsRow}>
+                        <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
+                          <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>
+                            {activeWellnessReview.completedTaskCount}/{activeWellnessReview.taskCount}
+                          </Text>
+                          <Text style={[styles.statLabel, { color: appTheme.muted }]}>tasks</Text>
+                        </View>
+                        <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
+                          <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>{activeWellnessReview.journalCount}</Text>
+                          <Text style={[styles.statLabel, { color: appTheme.muted }]}>journals</Text>
+                        </View>
+                        <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
+                          <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>{activeWellnessReview.companionMessageCount}</Text>
+                          <Text style={[styles.statLabel, { color: appTheme.muted }]}>chats</Text>
+                        </View>
+                        <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
+                          <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>
+                            {typeof activeWellnessReview.stepCount === 'number'
+                              ? formatCompactNumber(activeWellnessReview.stepCount)
+                              : '-'}
+                          </Text>
+                          <Text style={[styles.statLabel, { color: appTheme.muted }]}>steps</Text>
+                        </View>
+                        <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
+                          <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>
+                            {activeWellnessReview.locationCount ?? 0}
+                          </Text>
+                          <Text style={[styles.statLabel, { color: appTheme.muted }]}>places</Text>
+                        </View>
+                      </View>
+                    </>
+                  ) : (
+                    <View style={[styles.emptyReviewBlock, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
+                      <View style={[styles.emptyReviewIcon, { backgroundColor: appTheme.primarySoft }]}>
+                        <Ionicons name="flash-off-outline" size={20} color={appTheme.primaryStrong} />
+                      </View>
+                      <Text style={[styles.emptyReviewTitle, { color: appTheme.textStrong }]}>Wenwen needs Energy</Text>
+                      <Text style={[styles.emptyReviewBody, { color: appTheme.muted }]}>
+                        Yesterday&apos;s activity is ready. Earn or use Energy when you want Wenwen to write the review.
+                      </Text>
+                      <TouchableOpacity
+                        accessibilityRole="button"
+                        accessibilityLabel="Spend Energy to write review"
+                        disabled={glowBalance < WELLNESS_REVIEW_COST}
+                        onPress={handleChargeAndWriteWellnessReview}
+                        style={[
+                          styles.emptyReviewActionButton,
+                          {
+                            backgroundColor:
+                              glowBalance >= WELLNESS_REVIEW_COST
+                                ? appTheme.primary
+                                : appTheme.softBorder,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.emptyReviewActionText,
+                            { color: glowBalance >= WELLNESS_REVIEW_COST ? '#FFFFFF' : appTheme.muted },
+                          ]}
+                        >
+                          {glowBalance >= WELLNESS_REVIEW_COST
+                            ? `Write review · ${WELLNESS_REVIEW_COST} ${REWARD_CURRENCY_NAME}`
+                            : 'Earn Energy first'}
+                        </Text>
+                      </TouchableOpacity>
+                      <Text style={[styles.emptyReviewHint, { color: appTheme.muted }]}>
+                        Reviews use Energy only when Wenwen writes one.
+                      </Text>
+                    </View>
+                  )}
+                </ScrollView>
+
+                <TouchableOpacity
                   accessibilityRole="button"
                   accessibilityLabel="Close review"
                   onPress={closeWellnessReview}
-                  style={[styles.closeButton, { backgroundColor: appTheme.softSurface }]}
+                  style={[
+                    styles.primaryButton,
+                    activeWellnessReview
+                      ? { backgroundColor: appTheme.primary }
+                      : { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder, borderWidth: 1 },
+                  ]}
                 >
-                  <Ionicons name="close" size={19} color={appTheme.muted} />
-                </Pressable>
+                  <Text style={[styles.primaryButtonText, !activeWellnessReview && { color: appTheme.primaryStrong }]}>
+                    {activeWellnessReview ? 'Continue' : 'Not now'}
+                  </Text>
+                </TouchableOpacity>
               </View>
+            </View>
+          </Modal>
+          <Modal
+            transparent
+            animationType="fade"
+            visible={isFeelingScaleVisible}
+            onRequestClose={() => closeFeelingScale(null)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={[styles.feelingCard, { backgroundColor: appTheme.surface, borderColor: appTheme.border }]}>
+                <View style={[styles.feelingIcon, { backgroundColor: appTheme.primarySoft }]}>
+                  <Ionicons name="heart-outline" size={22} color={appTheme.primaryStrong} />
+                </View>
+                <Text style={[styles.reviewKicker, { color: appTheme.subtle }]}>Daily check-in</Text>
+                <Text style={[styles.feelingTitle, { color: appTheme.text }]}>How are you feeling right now?</Text>
+                <Text style={[styles.feelingBody, { color: appTheme.muted }]}>
+                  Choose a number from 1 to 10. 1 means very low, 10 means steady.
+                </Text>
 
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.reviewScrollContent}>
-                {isWellnessReviewLoading ? (
-                  <View style={styles.loadingBlock}>
-                    <ActivityIndicator color={appTheme.primaryStrong} />
-                    <Text style={[styles.loadingText, { color: appTheme.muted }]}>Writing your review...</Text>
-                  </View>
-                ) : activeWellnessReview ? (
-                  <>
-                    <View style={[styles.summaryBlock, { backgroundColor: appTheme.primarySoft, borderColor: appTheme.softBorder }]}>
-                      <Text style={[styles.summaryTitle, { color: appTheme.textStrong }]}>{activeWellnessReview.title}</Text>
-                      <Text style={[styles.summaryBody, { color: appTheme.muted }]}>{activeWellnessReview.body}</Text>
-                    </View>
-
-                    <View style={styles.statsRow}>
-                      <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
-                        <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>
-                          {activeWellnessReview.completedTaskCount}/{activeWellnessReview.taskCount}
-                        </Text>
-                        <Text style={[styles.statLabel, { color: appTheme.muted }]}>tasks</Text>
-                      </View>
-                      <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
-                        <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>{activeWellnessReview.journalCount}</Text>
-                        <Text style={[styles.statLabel, { color: appTheme.muted }]}>journals</Text>
-                      </View>
-                      <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
-                        <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>{activeWellnessReview.companionMessageCount}</Text>
-                        <Text style={[styles.statLabel, { color: appTheme.muted }]}>chats</Text>
-                      </View>
-                      <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
-                        <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>
-                          {typeof activeWellnessReview.stepCount === 'number'
-                            ? formatCompactNumber(activeWellnessReview.stepCount)
-                            : '-'}
-                        </Text>
-                        <Text style={[styles.statLabel, { color: appTheme.muted }]}>steps</Text>
-                      </View>
-                      <View style={[styles.statPill, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
-                        <Text style={[styles.statValue, { color: appTheme.primaryStrong }]}>
-                          {activeWellnessReview.locationCount ?? 0}
-                        </Text>
-                        <Text style={[styles.statLabel, { color: appTheme.muted }]}>places</Text>
-                      </View>
-                    </View>
-                  </>
-                ) : (
-                  <View style={[styles.emptyReviewBlock, { backgroundColor: appTheme.softSurface, borderColor: appTheme.softBorder }]}>
-                    <View style={[styles.emptyReviewIcon, { backgroundColor: appTheme.primarySoft }]}>
-                      <Ionicons name="flash-off-outline" size={22} color={appTheme.primaryStrong} />
-                    </View>
-                    <Text style={[styles.summaryTitle, { color: appTheme.textStrong }]}>Wenwen has no energy</Text>
-                    <Text style={[styles.summaryBody, { color: appTheme.muted }]}>
-                      Yesterday&apos;s activity is ready to review, but Wenwen needs energy before writing it.
-                    </Text>
-                    <TouchableOpacity
+                <View style={styles.scaleGrid}>
+                  {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
+                    <Pressable
+                      key={score}
                       accessibilityRole="button"
-                      accessibilityLabel="Use Energy to write review"
-                      disabled={!isPersonaCharged && glowBalance < PERSONA_CHARGE_COST}
-                      onPress={handleChargeAndWriteWellnessReview}
-                      style={[
-                        styles.primaryButton,
+                      accessibilityLabel={`Rate feeling ${score} out of 10`}
+                      onPress={() => closeFeelingScale(score)}
+                      style={({ pressed }) => [
+                        styles.scaleButton,
                         {
-                          backgroundColor:
-                            isPersonaCharged || glowBalance >= PERSONA_CHARGE_COST
-                              ? appTheme.primary
-                              : appTheme.softBorder,
+                          backgroundColor: appTheme.softSurface,
+                          borderColor: appTheme.softBorder,
                         },
+                        pressed && styles.scaleButtonPressed,
                       ]}
                     >
-                      <Text style={styles.primaryButtonText}>
-                        {isPersonaCharged
-                          ? 'Write review'
-                          : glowBalance >= PERSONA_CHARGE_COST
-                            ? `Use ${PERSONA_CHARGE_COST} ${REWARD_CURRENCY_NAME}`
-                            : 'Earn Energy first'}
-                      </Text>
-                    </TouchableOpacity>
-                    <Text style={[styles.emptyReviewHint, { color: appTheme.muted }]}>
-                      {PERSONA_CHARGE_COST} {REWARD_CURRENCY_NAME} wakes Wenwen for {PERSONA_CHARGE_HOURS} hours.
-                    </Text>
-                  </View>
-                )}
-              </ScrollView>
+                      <Text style={[styles.scaleButtonText, { color: appTheme.textStrong }]}>{score}</Text>
+                    </Pressable>
+                  ))}
+                </View>
 
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Close review"
-                onPress={closeWellnessReview}
-                style={[styles.primaryButton, { backgroundColor: appTheme.primary }]}
-              >
-                <Text style={styles.primaryButtonText}>{activeWellnessReview ? 'Continue' : 'Not now'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-        <Modal
-          transparent
-          animationType="fade"
-          visible={isFeelingScaleVisible}
-          onRequestClose={() => closeFeelingScale(null)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.feelingCard, { backgroundColor: appTheme.surface, borderColor: appTheme.border }]}>
-              <View style={[styles.feelingIcon, { backgroundColor: appTheme.primarySoft }]}>
-                <Ionicons name="heart-outline" size={22} color={appTheme.primaryStrong} />
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Skip feeling check-in today"
+                  onPress={() => closeFeelingScale(null)}
+                  style={[styles.skipFeelingButton, { backgroundColor: appTheme.softSurface }]}
+                >
+                  <Text style={[styles.skipFeelingText, { color: appTheme.muted }]}>Not now</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={[styles.reviewKicker, { color: appTheme.subtle }]}>Daily check-in</Text>
-              <Text style={[styles.feelingTitle, { color: appTheme.text }]}>How are you feeling right now?</Text>
-              <Text style={[styles.feelingBody, { color: appTheme.muted }]}>
-                Choose a number from 1 to 10. 1 means very low, 10 means steady.
-              </Text>
-
-              <View style={styles.scaleGrid}>
-                {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
-                  <Pressable
-                    key={score}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Rate feeling ${score} out of 10`}
-                    onPress={() => closeFeelingScale(score)}
-                    style={({ pressed }) => [
-                      styles.scaleButton,
-                      {
-                        backgroundColor: appTheme.softSurface,
-                        borderColor: appTheme.softBorder,
-                      },
-                      pressed && styles.scaleButtonPressed,
-                    ]}
-                  >
-                    <Text style={[styles.scaleButtonText, { color: appTheme.textStrong }]}>{score}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Skip feeling check-in today"
-                onPress={() => closeFeelingScale(null)}
-                style={[styles.skipFeelingButton, { backgroundColor: appTheme.softSurface }]}
-              >
-                <Text style={[styles.skipFeelingText, { color: appTheme.muted }]}>Not now</Text>
-              </TouchableOpacity>
             </View>
-          </View>
-        </Modal>
+          </Modal>
+        </AppErrorBoundary>
       </ThemeProvider>
     </GestureHandlerRootView>
   );
@@ -623,21 +676,78 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  modalOverlay: {
+  errorFallback: {
     flex: 1,
-    backgroundColor: 'rgba(24, 36, 58, 0.32)',
     justifyContent: 'center',
     paddingHorizontal: 20,
   },
-  reviewCard: {
-    borderRadius: 20,
+  errorFallbackCard: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+    borderRadius: 26,
     borderWidth: 1,
-    padding: 16,
-    maxHeight: '82%',
-    shadowColor: '#28384E',
-    shadowOpacity: 0.18,
-    shadowRadius: 28,
-    shadowOffset: { width: 0, height: 18 },
+    padding: 22,
+    alignItems: 'center',
+    shadowColor: '#4F5B51',
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 8,
+  },
+  errorFallbackIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  errorFallbackTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    lineHeight: 28,
+    textAlign: 'center',
+  },
+  errorFallbackBody: {
+    fontSize: 14,
+    fontWeight: '700',
+    lineHeight: 21,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  errorFallbackButton: {
+    minHeight: 50,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    marginTop: 18,
+  },
+  errorFallbackButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(36, 50, 46, 0.34)',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  reviewCard: {
+    width: '100%',
+    maxWidth: 430,
+    alignSelf: 'center',
+    borderRadius: 28,
+    borderWidth: 1,
+    padding: 20,
+    maxHeight: '78%',
+    shadowColor: '#4F5B51',
+    shadowOpacity: 0.16,
+    shadowRadius: 26,
+    shadowOffset: { width: 0, height: 16 },
     elevation: 8,
   },
   reviewHeader: {
@@ -645,31 +755,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   reviewHeaderText: {
     flex: 1,
   },
   reviewKicker: {
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: '900',
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   reviewTitle: {
-    fontSize: 22,
+    fontSize: 30,
     fontWeight: '900',
-    marginTop: 2,
+    letterSpacing: 0,
+    marginTop: 4,
   },
   closeButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
   },
   reviewScrollContent: {
-    gap: 12,
-    paddingBottom: 2,
+    gap: 14,
+    paddingBottom: 4,
   },
   loadingBlock: {
     minHeight: 150,
@@ -699,25 +811,57 @@ const styles = StyleSheet.create({
     lineHeight: 21,
   },
   emptyReviewBlock: {
-    borderRadius: 16,
+    borderRadius: 24,
     borderWidth: 1,
-    padding: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 22,
     alignItems: 'center',
   },
   emptyReviewIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
+  },
+  emptyReviewTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    lineHeight: 25,
+    textAlign: 'center',
+  },
+  emptyReviewBody: {
+    maxWidth: 292,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 23,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  emptyReviewActionButton: {
+    width: '100%',
+    maxWidth: 260,
+    minHeight: 50,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    marginTop: 20,
+  },
+  emptyReviewActionText: {
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    textAlign: 'center',
+    textTransform: 'uppercase',
   },
   emptyReviewHint: {
     fontSize: 12,
     fontWeight: '700',
     lineHeight: 17,
     textAlign: 'center',
-    marginTop: 10,
+    marginTop: 12,
   },
   statsRow: {
     flexDirection: 'row',
@@ -743,10 +887,11 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     minHeight: 46,
-    borderRadius: 15,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 14,
+    paddingHorizontal: 18,
+    marginTop: 16,
   },
   primaryButtonText: {
     color: '#FFFFFF',

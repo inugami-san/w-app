@@ -24,13 +24,15 @@ export function StepsSummaryCard({ compact = false }: StepsSummaryCardProps) {
   const theme = useAppTheme();
   const stepSummary = useStepSummary();
   const awardStepEnergy = useRewardStore((state) => state.awardStepEnergy);
-  const todaySteps = stepSummary.days.find((day) => day.isToday)?.steps ?? null;
+  const todaySteps = stepSummary.todaySteps;
   const todayDateKey = stepSummary.days.find((day) => day.isToday)?.key ?? '';
   const maxSteps = Math.max(1, ...stepSummary.days.map((day) => day.steps ?? 0));
   const [earnedEnergy, setEarnedEnergy] = useState(0);
   const earnedEnergyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusText =
-    stepSummary.status === 'permission-denied'
+    stepSummary.status === 'disabled'
+      ? 'Step tracking is turned off in Settings.'
+      : stepSummary.status === 'permission-denied'
       ? 'Motion permission is off for step tracking.'
       : stepSummary.status === 'unavailable'
         ? 'Step tracking is not available on this device.'
@@ -58,8 +60,8 @@ export function StepsSummaryCard({ compact = false }: StepsSummaryCardProps) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Start step tracking"
-      accessibilityHint="Request motion permission and show weekly steps"
+      accessibilityLabel={stepSummary.status === 'disabled' ? 'Step tracking is off' : 'Start step tracking'}
+      accessibilityHint={stepSummary.status === 'disabled' ? 'Enable steps in Settings' : 'Request motion permission and show weekly steps'}
       onPress={stepSummary.enable}
       style={({ pressed }) => [
         styles.container,
@@ -87,6 +89,22 @@ export function StepsSummaryCard({ compact = false }: StepsSummaryCardProps) {
       <Text style={[styles.totalSteps, compact && styles.compactTotalSteps, { color: theme.primaryStrong }]}>
         {formatSteps(compact ? todaySteps : stepSummary.totalSteps, stepSummary.isLoading)}
       </Text>
+      {!compact && (
+        <View style={styles.stepMetricsRow}>
+          <View style={[styles.stepMetric, { backgroundColor: theme.softSurface, borderColor: theme.softBorder }]}>
+            <Text style={[styles.stepMetricLabel, { color: theme.muted }]}>Today</Text>
+            <Text style={[styles.stepMetricValue, { color: theme.textStrong }]}>
+              {formatSteps(todaySteps, stepSummary.isLoading)}
+            </Text>
+          </View>
+          <View style={[styles.stepMetric, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}>
+            <Text style={[styles.stepMetricLabel, { color: theme.muted }]}>This week</Text>
+            <Text style={[styles.stepMetricValue, { color: theme.textStrong }]}>
+              {formatSteps(stepSummary.totalSteps, stepSummary.isLoading)}
+            </Text>
+          </View>
+        </View>
+      )}
       <Text style={[styles.energyRule, { color: theme.muted }]}>
         {earnedEnergy > 0
           ? `+${earnedEnergy} ${REWARD_CURRENCY_NAME} from movement`
@@ -180,6 +198,29 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginTop: 4,
     textTransform: 'uppercase',
+  },
+  stepMetricsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 12,
+  },
+  stepMetric: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  stepMetricLabel: {
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  stepMetricValue: {
+    fontSize: 18,
+    fontWeight: '900',
+    marginTop: 3,
   },
   chart: {
     minHeight: 142,

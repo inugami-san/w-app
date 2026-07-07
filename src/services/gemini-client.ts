@@ -28,6 +28,7 @@ type GeminiRequestOptions<T> = {
 
 type ExpoConfigExtra = {
   EXPO_PUBLIC_GEMINI_API_KEY?: string;
+  EXPO_PUBLIC_GEMINI_API_KEY_FALLBACK?: string;
 };
 
 function toError(error: unknown): Error {
@@ -59,12 +60,21 @@ function limitPromptSize(prompt: string) {
   return `${prompt.slice(0, MAX_GEMINI_PROMPT_CHARS)}\n\n[Prompt truncated for client safety.]`;
 }
 
-function getGeminiApiKey() {
+function getGeminiApiKeys() {
   const extra =
     (Constants.expoConfig?.extra as ExpoConfigExtra | undefined) ??
     ((Constants.manifest as { extra?: ExpoConfigExtra } | null)?.extra);
 
-  return process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? extra?.EXPO_PUBLIC_GEMINI_API_KEY;
+  return [
+    process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? extra?.EXPO_PUBLIC_GEMINI_API_KEY,
+    process.env.EXPO_PUBLIC_GEMINI_API_KEY_FALLBACK ?? extra?.EXPO_PUBLIC_GEMINI_API_KEY_FALLBACK,
+  ]
+    .map((key) => key?.trim())
+    .filter((key, index, keys): key is string => Boolean(key) && keys.indexOf(key) === index);
+}
+
+function shouldTryNextGeminiKey(status: number) {
+  return status === 429;
 }
 
 export async function requestGeminiWithFallback<T>({
@@ -77,61 +87,75 @@ export async function requestGeminiWithFallback<T>({
   onError,
   timeoutMs = GEMINI_REQUEST_TIMEOUT_MS,
 }: GeminiRequestOptions<T>): Promise<T> {
-  const apiKey = getGeminiApiKey();
+  const apiKeys = getGeminiApiKeys();
 
-  if (!apiKey) {
+  if (apiKeys.length === 0) {
     onError?.(
       new Error('Missing Gemini API key. Configure EXPO_PUBLIC_GEMINI_API_KEY for local AI features.')
     );
     return fallback;
   }
 
-  const abortController = new AbortController();
-  const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
   const mediaParts = [...images, ...inlineData];
+  let lastError: Error | undefined;
 
-  try {
-    const response = await fetch(GEMINI_ENDPOINT, {
-      method: 'POST',
-      signal: abortController.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: limitPromptSize(prompt) },
-              ...mediaParts.map((item) => ({
-                inline_data: {
-                  mime_type: item.mimeType,
-                  data: item.data,
-                },
-              })),
-            ],
-          },
-        ],
-        generationConfig,
-      }),
-    });
+  for (const [index, apiKey] of apiKeys.entries()) {
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
 
-    if (!response.ok) {
-      throw createHttpError(response.status);
+    try {
+      const response = await fetch(GEMINI_ENDPOINT, {
+        method: 'POST',
+        signal: abortController.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: limitPromptSize(prompt) },
+                ...mediaParts.map((item) => ({
+                  inline_data: {
+                    mime_type: item.mimeType,
+                    data: item.data,
+                  },
+                })),
+              ],
+            },
+          ],
+          generationConfig,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = createHttpError(response.status);
+        lastError = error;
+
+        if (shouldTryNextGeminiKey(response.status) && index < apiKeys.length - 1) {
+          continue;
+        }
+
+        throw error;
+      }
+
+      const payload = await response.json();
+      const rawText =
+        payload?.candidates?.[0]?.content?.parts
+          ?.map((part: { text?: string }) => part?.text ?? '')
+          .join('') ?? '';
+
+      return parse(rawText);
+    } catch (error) {
+      lastError = toError(error);
+      break;
+    } finally {
+      clearTimeout(timeoutId);
     }
-
-    const payload = await response.json();
-    const rawText =
-      payload?.candidates?.[0]?.content?.parts
-        ?.map((part: { text?: string }) => part?.text ?? '')
-        .join('') ?? '';
-
-    return parse(rawText);
-  } catch (error) {
-    onError?.(toError(error));
-    return fallback;
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  onError?.(lastError ?? new Error('Gemini request failed.'));
+  return fallback;
 }

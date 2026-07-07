@@ -16,6 +16,8 @@ export const PERSONA_CHARGE_HOURS = 2;
 export const PERSONA_CHARGE_MS = PERSONA_CHARGE_HOURS * 60 * 60 * 1000;
 export const TASK_SUGGESTION_COST = 1;
 export const DEEP_REVIEW_COST = 1;
+export const VOICE_TRANSCRIPTION_COST = 1;
+export const WELLNESS_REVIEW_COST = 1;
 export const PERSONA_UNLOCK_COSTS: Partial<Record<AvatarPersona, number>> = {
   cat: 12,
 };

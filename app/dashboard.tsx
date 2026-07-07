@@ -40,8 +40,6 @@ import {
 } from '@/src/store/preferences-store';
 import { useJournalStore } from '@/src/store/journal-store';
 import {
-  PERSONA_CHARGE_COST,
-  PERSONA_CHARGE_HOURS,
   REWARD_CURRENCY_NAME,
   TASK_SUGGESTION_COST,
   useRewardStore,
@@ -132,8 +130,6 @@ export default function DashboardScreen() {
   const companionEntries = useCompanionStore((state) => state.entries);
   const lastShownWellnessPeriodKey = useWellnessReviewStore((state) => state.lastShownPeriodKey);
   const requestReview = useWellnessReviewStore((state) => state.requestReview);
-  const hasActivePersonaCharge = useRewardStore((state) => state.hasActivePersonaCharge);
-  const personaChargeExpiresAt = useRewardStore((state) => state.personaChargeExpiresAt);
   const spendEnergy = useRewardStore((state) => state.spendEnergy);
 
   useEffect(() => {
@@ -216,13 +212,6 @@ export default function DashboardScreen() {
   }, [completionFeedback]);
 
   const completedCount = useMemo(() => tasks.filter((item) => item.done).length, [tasks]);
-  const isPersonaCharged = useMemo(
-    () => {
-      const expiresAt = Date.parse(personaChargeExpiresAt);
-      return Number.isFinite(expiresAt) && expiresAt > clockNow;
-    },
-    [clockNow, personaChargeExpiresAt]
-  );
   const totalCount = tasks.length;
   const routineCompletionCounts = useMemo(() => {
     const today = getLocalDateKey();
@@ -408,14 +397,6 @@ export default function DashboardScreen() {
 
   const handleGenerateSuggestion = async (category: WellnessCategory, focusText: string) => {
     if (isGeneratingSuggestion) return;
-    if (!hasActivePersonaCharge()) {
-      Alert.alert(
-        'Charge Wenwen first',
-        `Wenwen task suggestions need persona charge. Spend ${PERSONA_CHARGE_COST} ${REWARD_CURRENCY_NAME} for ${PERSONA_CHARGE_HOURS} hours from Companion.`
-      );
-      return;
-    }
-
     if (useRewardStore.getState().glowBalance < TASK_SUGGESTION_COST) {
       Alert.alert(
         'Energy needed',
@@ -499,7 +480,6 @@ export default function DashboardScreen() {
                 faceColor={faceColor}
                 bodyColor={bodyColor}
                 presentation="peek"
-                isAsleep={!isPersonaCharged}
               />
             )}
           </View>
@@ -1109,10 +1089,58 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 14,
     overflow: 'hidden',
+    position: 'relative',
     shadowOpacity: 0.05,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
     elevation: 2,
+  },
+  chargeMeter: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    zIndex: 2,
+    width: 92,
+    minHeight: 22,
+    borderRadius: 11,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  chargeMeterBody: {
+    flex: 1,
+  },
+  chargeTrack: {
+    height: 3,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
+  chargeFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  chargeTooltip: {
+    position: 'absolute',
+    top: 40,
+    left: 12,
+    zIndex: 3,
+    maxWidth: 160,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 7,
+  },
+  chargeTooltipText: {
+    fontSize: 12,
+    fontWeight: '900',
+    lineHeight: 16,
   },
   characterArea: {
     height: 168,

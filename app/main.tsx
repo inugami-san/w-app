@@ -6,13 +6,12 @@
  *    soft Wenwen palette. Defaults match the app-wide character defaults.
  */
 
-import React, { ComponentType, useEffect, useMemo, useState } from 'react';
+import React, { ComponentType, useEffect, useState } from 'react';
 import {
   Modal,
   Pressable,
   StyleSheet,
   View,
-  TouchableOpacity,
   Text,
   ScrollView,
   useWindowDimensions,
@@ -134,14 +133,14 @@ const SwatchRow: React.FC<SwatchRowProps> = ({ label, colors, selected, isUnlock
     <View style={row.container}>
       <Text style={[row.label, { color: theme.muted }]}>{label}</Text>
       <View style={row.swatches}>
-        {colors.map(({ color, label: cl }) => {
+        {colors.map(({ color, label: cl }, index) => {
           const isSelected = selected === color;
-          const locked = !isUnlocked(color, colors.findIndex((item) => item.color === color));
+          const locked = !isUnlocked(color, index);
           return (
-            <TouchableOpacity
+            <Pressable
               key={color}
               accessibilityRole="button"
-              accessibilityState={{ selected: isSelected, disabled: locked }}
+              accessibilityState={{ selected: isSelected }}
               accessibilityLabel={
                 locked
                   ? `Unlock ${cl} ${label.toLowerCase()} color for ${PAID_COLOR_COST} ${REWARD_CURRENCY_NAME}`
@@ -149,10 +148,11 @@ const SwatchRow: React.FC<SwatchRowProps> = ({ label, colors, selected, isUnlock
               }
               onPress={() => {
                 triggerSelectionHaptic();
-                onSelect(color, colors.findIndex((item) => item.color === color));
+                onSelect(color, index);
               }}
-              style={[
+              style={({ pressed }) => [
                 row.swatchButton,
+                pressed && row.pressed,
                 {
                   borderColor: isSelected ? theme.primary : 'transparent',
                 },
@@ -160,12 +160,12 @@ const SwatchRow: React.FC<SwatchRowProps> = ({ label, colors, selected, isUnlock
             >
               <View style={[row.swatchColor, { backgroundColor: color }]}>
                 {locked && (
-                  <View style={row.lockOverlay}>
+                  <View pointerEvents="none" style={row.lockOverlay}>
                     <Ionicons name="lock-closed" size={11} color="#FFFFFF" />
                   </View>
                 )}
               </View>
-            </TouchableOpacity>
+            </Pressable>
           );
         })}
       </View>
@@ -202,6 +202,9 @@ const row = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
   },
+  pressed: {
+    opacity: 0.82,
+  },
   lockOverlay: {
     ...StyleSheet.absoluteFillObject,
     borderRadius: 15,
@@ -232,7 +235,6 @@ export default function HomeScreen() {
   const unlockedPersonas = useRewardStore((state) => state.unlockedPersonas);
   const unlockColor = useRewardStore((state) => state.unlockColor);
   const unlockPersona = useRewardStore((state) => state.unlockPersona);
-  const personaChargeExpiresAt = useRewardStore((state) => state.personaChargeExpiresAt);
   const [avatarComponents, setAvatarComponents] =
     useState<Record<AvatarPersona, ComponentType<WenwenProps>> | null>(null);
   const { height } = useWindowDimensions();
@@ -242,7 +244,6 @@ export default function HomeScreen() {
   const [faceColor, setFaceColor] = useState(storedAvatarColors?.faceColor ?? DEFAULT_AVATAR_COLORS.faceColor);
   const [bodyColor, setBodyColor] = useState(storedAvatarColors?.bodyColor ?? DEFAULT_AVATAR_COLORS.bodyColor);
   const [persona, setPersona] = useState<AvatarPersona>(storedAvatarPersona ?? DEFAULT_AVATAR_PERSONA);
-  const [chargeClock, setChargeClock] = useState(() => Date.now());
   const [pendingColorUnlock, setPendingColorUnlock] = useState<{
     part: ColorPart;
     color: string;
@@ -284,20 +285,8 @@ export default function HomeScreen() {
     storedAvatarPersona,
   ]);
 
-  useEffect(() => {
-    const interval = setInterval(() => setChargeClock(Date.now()), 30000);
-    return () => clearInterval(interval);
-  }, []);
-
   const canvasHeight = Math.max(210, Math.min(260, height * 0.28));
   const AvatarComponent = avatarComponents?.[persona] ?? null;
-  const isPersonaCharged = useMemo(
-    () => {
-      const expiresAt = Date.parse(personaChargeExpiresAt);
-      return Number.isFinite(expiresAt) && expiresAt > chargeClock;
-    },
-    [chargeClock, personaChargeExpiresAt]
-  );
   const makeColorId = (label: string, color: string) => `${label.toLowerCase()}:${color}`;
   const isFreeColor = (index: number) => index < 2;
   const isColorUnlocked = (label: string, color: string, index: number, selectedColor: string) =>
@@ -438,7 +427,6 @@ export default function HomeScreen() {
                 faceColor={faceColor}
                 bodyColor={bodyColor}
                 presentation="peek"
-                isAsleep={!isPersonaCharged}
               />
             )}
           </View>
@@ -453,18 +441,19 @@ export default function HomeScreen() {
                 const isSelected = persona === option.key;
                 const PersonaPreviewComponent = avatarComponents?.[option.key] ?? null;
                 return (
-                  <TouchableOpacity
+                  <Pressable
                     key={option.key}
                     accessibilityRole="button"
-                    accessibilityState={{ selected: isSelected, disabled: !isPersonaUnlocked(option.key) }}
+                    accessibilityState={{ selected: isSelected }}
                     accessibilityLabel={
                       isPersonaUnlocked(option.key)
                         ? `Select ${option.title} persona`
                         : `Unlock ${option.title} persona for ${PERSONA_UNLOCK_COSTS[option.key] ?? 0} ${REWARD_CURRENCY_NAME}`
                     }
                     onPress={() => handlePersonaSelect(option.key)}
-                    style={[
+                    style={({ pressed }) => [
                       styles.personaOption,
+                      pressed && styles.pressablePressed,
                       {
                         backgroundColor: isSelected ? theme.primarySoft : theme.surface,
                         borderColor: isSelected ? theme.primary : theme.softBorder,
@@ -472,6 +461,7 @@ export default function HomeScreen() {
                     ]}
                   >
                     <View
+                      pointerEvents="none"
                       style={[
                         styles.personaPreview,
                         { backgroundColor: theme.primarySoft, borderColor: isSelected ? theme.primary : theme.softBorder },
@@ -483,7 +473,6 @@ export default function HomeScreen() {
                           faceColor={faceColor}
                           bodyColor={bodyColor}
                           presentation="showcase"
-                          isAsleep={!isPersonaCharged}
                         />
                       )}
                       {!isPersonaUnlocked(option.key) && (
@@ -503,7 +492,7 @@ export default function HomeScreen() {
                         </Text>
                       )}
                     </View>
-                  </TouchableOpacity>
+                  </Pressable>
                 );
               })}
             </View>
@@ -512,20 +501,29 @@ export default function HomeScreen() {
           <View style={styles.panelHeader}>
             <Text style={[styles.panelTitle, { color: theme.textStrong }]}>Color palette</Text>
             <View style={styles.panelActions}>
-              <TouchableOpacity
+              <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Reset avatar to defaults"
-                style={[styles.resetButton, { borderColor: theme.softBorder, backgroundColor: theme.surface }]}
                 onPress={resetAvatar}
+                style={({ pressed }) => [
+                  styles.resetButton,
+                  pressed && styles.pressablePressed,
+                  { borderColor: theme.softBorder, backgroundColor: theme.surface },
+                ]}
               >
                 <Text style={[styles.resetText, { color: theme.primaryStrong }]}>Reset</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 accessibilityRole="button"
-                style={[styles.submitButton, { backgroundColor: theme.primary }]}
-                onPress={saveAndOpenDashboard}>
+                onPress={saveAndOpenDashboard}
+                style={({ pressed }) => [
+                  styles.submitButton,
+                  pressed && styles.pressablePressed,
+                  { backgroundColor: theme.primary },
+                ]}
+              >
                 <Text style={styles.submitText}>Continue</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
           </View>
 
@@ -559,10 +557,15 @@ export default function HomeScreen() {
         visible={Boolean(pendingColorUnlock)}
         onRequestClose={() => setPendingColorUnlock(null)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setPendingColorUnlock(null)}>
+        <View style={styles.modalOverlay}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss color unlock dialog"
+            style={styles.modalBackdrop}
+            onPress={() => setPendingColorUnlock(null)}
+          />
+          <View
             style={[styles.unlockModal, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={() => undefined}
           >
             <View style={styles.unlockModalHeader}>
               <View style={[styles.unlockPreview, { backgroundColor: pendingColorUnlock?.color ?? theme.primarySoft }]} />
@@ -590,29 +593,34 @@ export default function HomeScreen() {
             )}
 
             <View style={styles.unlockActions}>
-              <TouchableOpacity
+              <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Cancel color unlock"
                 onPress={() => setPendingColorUnlock(null)}
-                style={[styles.unlockCancelButton, { backgroundColor: theme.softSurface }]}
+                style={({ pressed }) => [
+                  styles.unlockCancelButton,
+                  pressed && styles.pressablePressed,
+                  { backgroundColor: theme.softSurface },
+                ]}
               >
                 <Text style={[styles.unlockCancelText, { color: theme.muted }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Confirm color unlock"
                 disabled={glowBalance < PAID_COLOR_COST}
                 onPress={handleConfirmColorUnlock}
-                style={[
+                style={({ pressed }) => [
                   styles.unlockConfirmButton,
+                  pressed && glowBalance >= PAID_COLOR_COST && styles.pressablePressed,
                   { backgroundColor: glowBalance >= PAID_COLOR_COST ? theme.primary : theme.softBorder },
                 ]}
               >
                 <Text style={styles.unlockConfirmText}>Unlock</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       <Modal
@@ -621,10 +629,15 @@ export default function HomeScreen() {
         visible={Boolean(pendingPersonaUnlock)}
         onRequestClose={() => setPendingPersonaUnlock(null)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setPendingPersonaUnlock(null)}>
+        <View style={styles.modalOverlay}>
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss persona unlock dialog"
+            style={styles.modalBackdrop}
+            onPress={() => setPendingPersonaUnlock(null)}
+          />
+          <View
             style={[styles.unlockModal, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={() => undefined}
           >
             <View style={styles.unlockModalHeader}>
               <View style={[styles.personaUnlockPreview, { backgroundColor: theme.primarySoft }]}>
@@ -652,21 +665,28 @@ export default function HomeScreen() {
             )}
 
             <View style={styles.unlockActions}>
-              <TouchableOpacity
+              <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Cancel persona unlock"
                 onPress={() => setPendingPersonaUnlock(null)}
-                style={[styles.unlockCancelButton, { backgroundColor: theme.softSurface }]}
+                style={({ pressed }) => [
+                  styles.unlockCancelButton,
+                  pressed && styles.pressablePressed,
+                  { backgroundColor: theme.softSurface },
+                ]}
               >
                 <Text style={[styles.unlockCancelText, { color: theme.muted }]}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
+              </Pressable>
+              <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Confirm persona unlock"
                 disabled={glowBalance < (PERSONA_UNLOCK_COSTS[pendingPersonaUnlock ?? 'cat'] ?? 0)}
                 onPress={handleConfirmPersonaUnlock}
-                style={[
+                style={({ pressed }) => [
                   styles.unlockConfirmButton,
+                  pressed &&
+                    glowBalance >= (PERSONA_UNLOCK_COSTS[pendingPersonaUnlock ?? 'cat'] ?? 0) &&
+                    styles.pressablePressed,
                   {
                     backgroundColor:
                       glowBalance >= (PERSONA_UNLOCK_COSTS[pendingPersonaUnlock ?? 'cat'] ?? 0)
@@ -676,10 +696,10 @@ export default function HomeScreen() {
                 ]}
               >
                 <Text style={styles.unlockConfirmText}>Unlock</Text>
-              </TouchableOpacity>
+              </Pressable>
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </View>
       </Modal>
 
       <View style={styles.bottomTabWrap}>
@@ -838,11 +858,17 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
+  pressablePressed: {
+    opacity: 0.82,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15,23,42,0.36)',
     justifyContent: 'center',
     padding: 22,
+  },
+  modalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
   },
   unlockModal: {
     borderRadius: 22,

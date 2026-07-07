@@ -60,6 +60,26 @@ const THEME_OPTIONS: {
   },
 ];
 
+const STEP_TRACKING_OPTIONS: {
+  value: boolean;
+  title: string;
+  detail: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  {
+    value: true,
+    title: 'Enabled',
+    detail: 'Show step counts on Home, Profile, and reviews when motion permission is available.',
+    icon: 'walk-outline',
+  },
+  {
+    value: false,
+    title: 'Disabled',
+    detail: 'Hide step loading and stop Wenwen from reading step counts.',
+    icon: 'remove-circle-outline',
+  },
+];
+
 type AiPrivacyKey = 'tasks' | 'journal' | 'companion' | 'images' | 'locations';
 
 const AI_PRIVACY_OPTIONS: {
@@ -137,6 +157,8 @@ export default function SettingsScreen() {
   const setAiLocationContextEnabled = usePreferencesStore((state) => state.setAiLocationContextEnabled);
   const locationAutoSyncEnabled = usePreferencesStore((state) => state.locationAutoSyncEnabled);
   const setLocationAutoSyncEnabled = usePreferencesStore((state) => state.setLocationAutoSyncEnabled);
+  const stepTrackingEnabled = usePreferencesStore((state) => state.stepTrackingEnabled);
+  const setStepTrackingEnabled = usePreferencesStore((state) => state.setStepTrackingEnabled);
   const resetHomeGuide = usePreferencesStore((state) => state.resetHomeGuide);
   const resetPreferences = usePreferencesStore((state) => state.resetPreferences);
   const setReminderSettings = usePreferencesStore((state) => state.setReminderSettings);
@@ -304,6 +326,7 @@ export default function SettingsScreen() {
         aiCompanionContextEnabled: preferenceState.aiCompanionContextEnabled,
         aiJournalImageContextEnabled: preferenceState.aiJournalImageContextEnabled,
         aiLocationContextEnabled: preferenceState.aiLocationContextEnabled,
+        stepTrackingEnabled: preferenceState.stepTrackingEnabled,
         reducedMotion: preferenceState.reducedMotion,
       },
       tasks: taskState.tasks,
@@ -733,6 +756,64 @@ export default function SettingsScreen() {
             <Text style={[styles.fixedTimeText, { color: theme.muted }]}>
               {NIGHTLY_REVIEW_TIME.hour - 12}:{String(NIGHTLY_REVIEW_TIME.minute).padStart(2, '0')} PM every night
             </Text>
+          </View>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.cardTitle, { color: theme.textStrong }]}>Step tracking</Text>
+          <Text style={[styles.cardCaption, { color: theme.muted }]}>
+            Controls whether Wenwen reads motion step counts for Home, Profile, Energy rewards, and reviews.
+          </Text>
+
+          <View style={styles.optionList}>
+            {STEP_TRACKING_OPTIONS.map((option) => {
+              const isActive = stepTrackingEnabled === option.value;
+              return (
+                <Pressable
+                  key={option.title}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: isActive }}
+                  accessibilityLabel={`Step tracking ${option.title.toLowerCase()}`}
+                  onPress={() => setStepTrackingEnabled(option.value)}
+                  style={[
+                    styles.optionRow,
+                    {
+                      backgroundColor: theme.softSurface,
+                      borderColor: theme.softBorder,
+                    },
+                    isActive && {
+                      backgroundColor: theme.primarySoft,
+                      borderColor: theme.primary,
+                    },
+                  ]}
+                >
+                  <View style={[styles.optionIcon, { backgroundColor: theme.primarySoft }]}>
+                    <Ionicons
+                      name={option.icon}
+                      size={18}
+                      color={isActive ? theme.primaryStrong : theme.muted}
+                    />
+                  </View>
+                  <View style={styles.optionTextWrap}>
+                    <Text
+                      style={[
+                        styles.optionTitle,
+                        { color: theme.textStrong },
+                        isActive && { color: theme.primaryStrong },
+                      ]}
+                    >
+                      {option.title}
+                    </Text>
+                    <Text style={[styles.optionDetail, { color: theme.muted }]}>{option.detail}</Text>
+                  </View>
+                  <Ionicons
+                    name={isActive ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={22}
+                    color={isActive ? theme.primary : theme.subtle}
+                  />
+                </Pressable>
+              );
+            })}
           </View>
         </View>
 

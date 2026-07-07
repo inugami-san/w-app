@@ -63,6 +63,8 @@ function getEndOfDateKey(dateKey: string) {
 }
 
 async function getStepCountForPeriod(period: WellnessReviewPeriod) {
+  if (!usePreferencesStore.getState().stepTrackingEnabled) return null;
+
   try {
     const isAvailable = await Pedometer.isAvailableAsync();
     if (!isAvailable) return null;

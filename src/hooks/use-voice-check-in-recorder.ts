@@ -1,18 +1,37 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
   setAudioModeAsync,
   useAudioRecorder,
-  useAudioRecorderState,
 } from 'expo-audio';
 
+type VoiceRecorderState = {
+  durationMillis: number;
+  isRecording: boolean;
+  metering?: number;
+};
+
 export function useVoiceCheckInRecorder() {
+  const latestUriRef = useRef<string | null>(null);
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const isMountedRef = useRef(true);
+  const [recorderState, setRecorderState] = useState<VoiceRecorderState>({
+    durationMillis: 0,
+    isRecording: false,
+    metering: undefined,
+  });
   const recorder = useAudioRecorder({
     ...RecordingPresets.LOW_QUALITY,
     isMeteringEnabled: true,
+  }, (status) => {
+    if (!isMountedRef.current) return;
+    if (status.url) latestUriRef.current = status.url;
+    if (status.isFinished || status.hasError) {
+      recordingStartedAtRef.current = null;
+      setRecorderState((current) => ({ ...current, isRecording: false }));
+    }
   });
-  const recorderState = useAudioRecorderState(recorder, 250);
   const [isPreparing, setIsPreparing] = useState(false);
 
   const startRecording = useCallback(async () => {
@@ -34,23 +53,34 @@ export function useVoiceCheckInRecorder() {
       });
       await recorder.prepareToRecordAsync();
       recorder.record();
+      latestUriRef.current = null;
+      recordingStartedAtRef.current = Date.now();
+      setRecorderState({
+        durationMillis: 0,
+        isRecording: true,
+        metering: undefined,
+      });
     } finally {
-      setIsPreparing(false);
+      if (isMountedRef.current) setIsPreparing(false);
     }
   }, [isPreparing, recorder, recorderState.isRecording]);
 
   const stopRecording = useCallback(async () => {
     if (!recorderState.isRecording && !recorder.isRecording) {
-      return recorder.uri ?? recorder.getStatus().url;
+      return latestUriRef.current ?? recorder.uri;
     }
 
     try {
       await recorder.stop();
     } finally {
       await setAudioModeAsync({ allowsRecording: false });
+      recordingStartedAtRef.current = null;
+      if (isMountedRef.current) {
+        setRecorderState((current) => ({ ...current, isRecording: false }));
+      }
     }
 
-    const uri = recorder.uri ?? recorder.getStatus().url;
+    const uri = recorder.uri ?? latestUriRef.current;
     if (!uri) {
       throw new Error('No voice recording was saved.');
     }
@@ -65,17 +95,39 @@ export function useVoiceCheckInRecorder() {
       }
     } finally {
       await setAudioModeAsync({ allowsRecording: false });
+      latestUriRef.current = null;
+      recordingStartedAtRef.current = null;
+      if (isMountedRef.current) {
+        setRecorderState({
+          durationMillis: 0,
+          isRecording: false,
+          metering: undefined,
+        });
+      }
     }
   }, [recorder, recorderState.isRecording]);
 
   useEffect(() => {
+    if (!recorderState.isRecording) return;
+
+    const interval = setInterval(() => {
+      const startedAt = recordingStartedAtRef.current;
+      if (!startedAt) return;
+      setRecorderState((current) => ({
+        ...current,
+        durationMillis: Date.now() - startedAt,
+      }));
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [recorderState.isRecording]);
+
+  useEffect(() => {
     return () => {
-      if (recorder.isRecording) {
-        recorder.stop().catch(() => undefined);
-      }
+      isMountedRef.current = false;
       setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
     };
-  }, [recorder]);
+  }, []);
 
   return {
     durationMillis: recorderState.durationMillis,

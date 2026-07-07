@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { Pedometer } from 'expo-sensors';
 
-export type StepTrackingStatus = 'idle' | 'checking' | 'ready' | 'unavailable' | 'permission-denied' | 'error';
+import { usePreferencesStore } from '@/src/store/preferences-store';
+
+export type StepTrackingStatus = 'disabled' | 'idle' | 'checking' | 'ready' | 'unavailable' | 'permission-denied' | 'error';
 
 export type StepDay = {
   key: string;
@@ -14,6 +16,7 @@ export type StepDay = {
 
 type UseStepSummaryResult = {
   totalSteps: number | null;
+  todaySteps: number | null;
   days: StepDay[];
   status: StepTrackingStatus;
   label: string;
@@ -71,13 +74,16 @@ function sumKnownSteps(days: StepDay[]) {
 }
 
 export function useStepSummary(): UseStepSummaryResult {
+  const stepTrackingEnabled = usePreferencesStore((state) => state.stepTrackingEnabled);
   const initialDays = useMemo(() => getCurrentWeekDays(), []);
   const [days, setDays] = useState<StepDay[]>(initialDays);
   const [totalSteps, setTotalSteps] = useState<number | null>(null);
-  const [status, setStatus] = useState<StepTrackingStatus>('idle');
+  const [status, setStatus] = useState<StepTrackingStatus>(stepTrackingEnabled ? 'idle' : 'disabled');
   const [label, setLabel] = useState('weekly steps');
   const [errorMessage, setErrorMessage] = useState('');
   const subscriptionRef = useRef<ReturnType<typeof Pedometer.watchStepCount> | null>(null);
+  const didAutoLoadRef = useRef(false);
+  const todaySteps = days.find((day) => day.isToday)?.steps ?? null;
 
   const clearSubscription = useCallback(() => {
     subscriptionRef.current?.remove();
@@ -93,6 +99,15 @@ export function useStepSummary(): UseStepSummaryResult {
   }, []);
 
   const enable = useCallback(async () => {
+    if (!stepTrackingEnabled) {
+      clearSubscription();
+      setStatus('disabled');
+      setLabel('steps off');
+      setTotalSteps(null);
+      setDays(getCurrentWeekDays());
+      return;
+    }
+
     clearSubscription();
     setStatus('checking');
     setErrorMessage('');
@@ -158,12 +173,46 @@ export function useStepSummary(): UseStepSummaryResult {
       setErrorMessage(message);
       setTotalSteps(null);
     }
-  }, [clearSubscription, setTodaySteps]);
+  }, [clearSubscription, setTodaySteps, stepTrackingEnabled]);
+
+  useEffect(() => {
+    if (stepTrackingEnabled) {
+      if (status === 'disabled') {
+        setStatus('idle');
+        setLabel('weekly steps');
+      }
+      return;
+    }
+
+    clearSubscription();
+    didAutoLoadRef.current = false;
+    setStatus('disabled');
+    setLabel('steps off');
+    setErrorMessage('');
+    setTotalSteps(null);
+    setDays(getCurrentWeekDays());
+  }, [clearSubscription, status, stepTrackingEnabled]);
+
+  useEffect(() => {
+    if (!stepTrackingEnabled || didAutoLoadRef.current || status !== 'idle') return;
+    didAutoLoadRef.current = true;
+
+    if (Platform.OS === 'web') return;
+
+    Pedometer.getPermissionsAsync()
+      .then((permission) => {
+        if (permission.granted) {
+          enable().catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
+  }, [enable, status, stepTrackingEnabled]);
 
   useEffect(() => clearSubscription, [clearSubscription]);
 
   return {
     totalSteps,
+    todaySteps,
     days,
     status,
     label,

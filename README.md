@@ -20,6 +20,7 @@ Wenwen is an Expo / React Native wellness companion app focused on small daily t
 
    ```bash
    EXPO_PUBLIC_GEMINI_API_KEY=your_key_here
+   EXPO_PUBLIC_GEMINI_API_KEY_FALLBACK=optional_backup_key_here
    ```
 
 4. Start Expo.

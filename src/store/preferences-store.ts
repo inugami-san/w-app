@@ -74,6 +74,7 @@ type PreferencesStore = {
   aiJournalImageContextEnabled: boolean;
   aiLocationContextEnabled: boolean;
   locationAutoSyncEnabled: boolean;
+  stepTrackingEnabled: boolean;
   profileEncouragementCache: ProfileEncouragementCache | null;
   reducedMotion: boolean;
   setThemeMode: (themeMode: AppThemeMode) => void;
@@ -92,6 +93,7 @@ type PreferencesStore = {
   setAiJournalImageContextEnabled: (enabled: boolean) => void;
   setAiLocationContextEnabled: (enabled: boolean) => void;
   setLocationAutoSyncEnabled: (enabled: boolean) => void;
+  setStepTrackingEnabled: (enabled: boolean) => void;
   setProfileEncouragementCache: (cache: ProfileEncouragementCache | null) => void;
   setReducedMotion: (enabled: boolean) => void;
   resetPreferences: () => void;
@@ -126,6 +128,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       aiJournalImageContextEnabled: false,
       aiLocationContextEnabled: false,
       locationAutoSyncEnabled: false,
+      stepTrackingEnabled: true,
       profileEncouragementCache: null,
       reducedMotion: false,
       setThemeMode: (themeMode) => set({ themeMode }),
@@ -169,6 +172,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
       setAiJournalImageContextEnabled: (aiJournalImageContextEnabled) => set({ aiJournalImageContextEnabled }),
       setAiLocationContextEnabled: (aiLocationContextEnabled) => set({ aiLocationContextEnabled }),
       setLocationAutoSyncEnabled: (locationAutoSyncEnabled) => set({ locationAutoSyncEnabled }),
+      setStepTrackingEnabled: (stepTrackingEnabled) => set({ stepTrackingEnabled }),
       setProfileEncouragementCache: (profileEncouragementCache) => set({ profileEncouragementCache }),
       setReducedMotion: (reducedMotion) => set({ reducedMotion }),
       resetPreferences: () => set({
@@ -190,6 +194,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
         aiJournalImageContextEnabled: false,
         aiLocationContextEnabled: false,
         locationAutoSyncEnabled: false,
+        stepTrackingEnabled: true,
         profileEncouragementCache: null,
         reducedMotion: false,
       }),
@@ -217,6 +222,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
         aiJournalImageContextEnabled: state.aiJournalImageContextEnabled,
         aiLocationContextEnabled: state.aiLocationContextEnabled,
         locationAutoSyncEnabled: state.locationAutoSyncEnabled,
+        stepTrackingEnabled: state.stepTrackingEnabled,
         profileEncouragementCache: state.profileEncouragementCache,
         reducedMotion: state.reducedMotion,
       }),
@@ -233,6 +239,7 @@ export const usePreferencesStore = create<PreferencesStore>()(
           state.setAiJournalImageContextEnabled(state.aiJournalImageContextEnabled ?? false);
           state.setAiLocationContextEnabled(state.aiLocationContextEnabled ?? false);
           state.setLocationAutoSyncEnabled(state.locationAutoSyncEnabled ?? false);
+          state.setStepTrackingEnabled(state.stepTrackingEnabled ?? true);
         }
         state?.setHasHydrated(true);
       },

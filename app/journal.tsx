@@ -28,9 +28,8 @@ import { useKeyboardState } from '@/src/hooks/use-keyboard-state';
 import { useJournalStore } from '@/src/store/journal-store';
 import { usePreferencesStore } from '@/src/store/preferences-store';
 import {
-  PERSONA_CHARGE_COST,
-  PERSONA_CHARGE_HOURS,
   REWARD_CURRENCY_NAME,
+  VOICE_TRANSCRIPTION_COST,
   useRewardStore,
 } from '@/src/store/reward-store';
 import { useTaskStore } from '@/src/store/task-store';
@@ -279,7 +278,7 @@ export default function JournalScreen() {
   const setEntryDailyContext = useJournalStore((state) => state.setDailyContext);
   const setTaskSnapshot = useJournalStore((state) => state.setTaskSnapshot);
   const markHomeGuideFeatureVisited = usePreferencesStore((state) => state.markHomeGuideFeatureVisited);
-  const hasActivePersonaCharge = useRewardStore((state) => state.hasActivePersonaCharge);
+  const spendEnergy = useRewardStore((state) => state.spendEnergy);
   const hasHydratedTasks = useTaskStore((state) => state.hasHydrated);
   const resetDailyTasks = useTaskStore((state) => state.resetDailyTasks);
   const theme = useAppTheme();
@@ -432,16 +431,17 @@ export default function JournalScreen() {
 
   const handleToggleVoiceJournal = async () => {
     if (isSavingJournal || isTranscribingVoice) return;
-    if (!hasActivePersonaCharge()) {
-      Alert.alert(
-        'Charge Wenwen first',
-        `Wenwen voice notes need persona charge. Spend ${PERSONA_CHARGE_COST} ${REWARD_CURRENCY_NAME} for ${PERSONA_CHARGE_HOURS} hours from Companion.`
-      );
-      return;
-    }
 
     try {
       if (!voiceRecorder.isRecording) {
+        if (useRewardStore.getState().glowBalance < VOICE_TRANSCRIPTION_COST) {
+          Alert.alert(
+            'Energy needed',
+            `Voice notes cost ${VOICE_TRANSCRIPTION_COST} ${REWARD_CURRENCY_NAME}.`
+          );
+          return;
+        }
+
         await voiceRecorder.startRecording();
         return;
       }
@@ -450,6 +450,15 @@ export default function JournalScreen() {
       const uri = await voiceRecorder.stopRecording();
       if (!uri) {
         throw new Error('No voice recording was saved.');
+      }
+
+      const didSpend = spendEnergy(VOICE_TRANSCRIPTION_COST);
+      if (!didSpend) {
+        Alert.alert(
+          'Energy needed',
+          `Voice notes cost ${VOICE_TRANSCRIPTION_COST} ${REWARD_CURRENCY_NAME}.`
+        );
+        return;
       }
 
       const transcription = await transcribeVoiceCheckIn(

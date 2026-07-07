@@ -44,9 +44,8 @@ import {
 import { useJournalStore } from '@/src/store/journal-store';
 import {
   DEEP_REVIEW_COST,
-  PERSONA_CHARGE_HOURS,
-  PERSONA_CHARGE_COST,
   REWARD_CURRENCY_NAME,
+  VOICE_TRANSCRIPTION_COST,
   useRewardStore,
 } from '@/src/store/reward-store';
 import { useTaskStore } from '@/src/store/task-store';
@@ -80,18 +79,6 @@ function hasConversation(entry: CompanionDayEntry | undefined) {
 
 function getMatchingSummary(entry: CompanionDayEntry | undefined, messages: CompanionMessage[]) {
   return entry?.summaries.find((summary) => summary.messages.length === messages.length) ?? null;
-}
-
-function formatChargeRemaining(remainingMs: number) {
-  if (remainingMs <= 0) return 'No charge';
-
-  const totalMinutes = Math.ceil(remainingMs / 60000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-
-  if (hours <= 0) return `${minutes}m left`;
-  if (minutes === 0) return `${hours}h left`;
-  return `${hours}h ${minutes}m left`;
 }
 
 const HISTORY_VISIBLE_ITEM_COUNT = 5;
@@ -218,10 +205,6 @@ export default function CompanionScreen() {
   const aiCompanionContextEnabled = usePreferencesStore((state) => state.aiCompanionContextEnabled);
   const reducedMotion = usePreferencesStore((state) => state.reducedMotion);
   const markHomeGuideFeatureVisited = usePreferencesStore((state) => state.markHomeGuideFeatureVisited);
-  const glowBalance = useRewardStore((state) => state.glowBalance);
-  const chargePersona = useRewardStore((state) => state.chargePersona);
-  const hasActivePersonaCharge = useRewardStore((state) => state.hasActivePersonaCharge);
-  const getPersonaChargeRemainingMs = useRewardStore((state) => state.getPersonaChargeRemainingMs);
   const spendEnergy = useRewardStore((state) => state.spendEnergy);
   const todayEntry = entries[today];
   const messages = todayEntry?.messages ?? fallbackMessages;
@@ -235,14 +218,10 @@ export default function CompanionScreen() {
   const [isReviewLoading, setIsReviewLoading] = useState(false);
   const [reviewSummary, setReviewSummary] = useState<CompanionChatSummary | null>(null);
   const [reviewError, setReviewError] = useState('');
-  const [energyModalMode, setEnergyModalMode] = useState<'confirm' | 'empty' | null>(null);
-  const [energyModalFeature, setEnergyModalFeature] = useState('Wenwen chat');
   const [lastFailedPrompt, setLastFailedPrompt] = useState('');
-  const [chargeClock, setChargeClock] = useState(() => Date.now());
   const chatScrollRef = useRef<ScrollView | null>(null);
   const inputRef = useRef<TextInput | null>(null);
   const handledCloseoutPromptRef = useRef('');
-  const pendingEnergyActionRef = useRef<(() => void) | null>(null);
   const reviewRequestIdRef = useRef(0);
   const { isVisible: isKeyboardVisible } = useKeyboardState();
   const voiceRecorder = useVoiceCheckInRecorder();
@@ -252,12 +231,6 @@ export default function CompanionScreen() {
   const avatarGlow = useRef(new Animated.Value(0)).current;
   const floatingBubble = useRef(new Animated.Value(0)).current;
   const lastAnimatedMessageIdRef = useRef('');
-  const personaChargeRemainingMs = getPersonaChargeRemainingMs(chargeClock);
-  const isPersonaCharged = hasActivePersonaCharge(chargeClock);
-  const canChargePersona = glowBalance >= PERSONA_CHARGE_COST;
-  const chargeStatusText = isPersonaCharged
-    ? `Charged · ${formatChargeRemaining(personaChargeRemainingMs)}`
-    : 'Needs charge';
   const canSend = input.trim().length > 0 && !isSending && !isTranscribingVoice;
   const chatPanelHeight = isKeyboardVisible
     ? Math.min(Math.max(windowHeight * 0.34, 280), 390)
@@ -276,7 +249,7 @@ export default function CompanionScreen() {
       accessibilityLabel="Wenwen persona"
       style={[styles.messageAvatar, { backgroundColor: theme.primarySoft, borderColor: theme.softBorder }]}
     >
-      <MiniPersonaAvatar colors={selectedColors} persona={selectedPersona} isAsleep={!isPersonaCharged} />
+      <MiniPersonaAvatar colors={selectedColors} persona={selectedPersona} />
     </View>
   );
 
@@ -289,11 +262,6 @@ export default function CompanionScreen() {
     setInput(cleanCloseoutPrompt);
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [params.closeoutPrompt]);
-
-  useEffect(() => {
-    const interval = setInterval(() => setChargeClock(Date.now()), 30000);
-    return () => clearInterval(interval);
-  }, []);
 
   const historyKeys = useMemo(() => {
     return Object.keys(entries)
@@ -519,43 +487,6 @@ export default function CompanionScreen() {
     }
   };
 
-  const requestPersonaCharge = useCallback((featureLabel: string, onCharged: () => void) => {
-    const rewardState = useRewardStore.getState();
-    if (rewardState.hasActivePersonaCharge()) {
-      onCharged();
-      return;
-    }
-
-    setEnergyModalFeature(featureLabel);
-    pendingEnergyActionRef.current = onCharged;
-
-    if (rewardState.glowBalance < PERSONA_CHARGE_COST) {
-      setEnergyModalMode('empty');
-      return;
-    }
-
-    setEnergyModalMode('confirm');
-  }, []);
-
-  const closeEnergyModal = () => {
-    setEnergyModalMode(null);
-    pendingEnergyActionRef.current = null;
-  };
-
-  const handleConfirmEnergyUse = () => {
-    const charged = useRewardStore.getState().chargePersona();
-    if (!charged) {
-      setEnergyModalMode('empty');
-      return;
-    }
-
-    const pendingAction = pendingEnergyActionRef.current;
-    setEnergyModalMode(null);
-    pendingEnergyActionRef.current = null;
-    setChargeClock(Date.now());
-    pendingAction?.();
-  };
-
   const openReviewForDate = useCallback(
     async (dateKey: string) => {
       const requestId = reviewRequestIdRef.current + 1;
@@ -608,45 +539,42 @@ export default function CompanionScreen() {
 
   const handleOpenReviewForDate = useCallback(
     (dateKey: string) => {
-      requestPersonaCharge('Wenwen review', () => {
-        openReviewForDate(dateKey).catch(() => undefined);
-      });
+      openReviewForDate(dateKey).catch(() => undefined);
     },
-    [openReviewForDate, requestPersonaCharge]
+    [openReviewForDate]
   );
 
   const handleDeepReview = () => {
     if (!reviewDateKey || isReviewLoading) return;
 
-    requestPersonaCharge('deeper Wenwen review', async () => {
-      const entry = useCompanionStore.getState().entries[reviewDateKey];
-      if (!hasConversation(entry)) return;
+    const entry = useCompanionStore.getState().entries[reviewDateKey];
+    if (!hasConversation(entry)) return;
 
-      if (useRewardStore.getState().glowBalance < DEEP_REVIEW_COST) {
-        Alert.alert(
-          'Energy needed',
-          `A deeper Wenwen review costs ${DEEP_REVIEW_COST} ${REWARD_CURRENCY_NAME}.`
-        );
-        return;
-      }
+    if (useRewardStore.getState().glowBalance < DEEP_REVIEW_COST) {
+      Alert.alert(
+        'Energy needed',
+        `A deeper Wenwen review costs ${DEEP_REVIEW_COST} ${REWARD_CURRENCY_NAME}.`
+      );
+      return;
+    }
 
-      const didSpend = spendEnergy(DEEP_REVIEW_COST);
-      if (!didSpend) return;
+    const didSpend = spendEnergy(DEEP_REVIEW_COST);
+    if (!didSpend) return;
 
-      const requestId = reviewRequestIdRef.current + 1;
-      reviewRequestIdRef.current = requestId;
-      const summaryMessages = entry?.messages ?? [];
-      setReviewError('');
-      setIsReviewLoading(true);
+    const requestId = reviewRequestIdRef.current + 1;
+    reviewRequestIdRef.current = requestId;
+    const summaryMessages = entry?.messages ?? [];
+    setReviewError('');
+    setIsReviewLoading(true);
 
-      try {
-        const result = await generateCompanionSummary({
-          dateKey: reviewDateKey,
-          messages: summaryMessages,
-        }, {
-          includeCompanionContext: aiCompanionContextEnabled,
-          depth: 'deep',
-        });
+    generateCompanionSummary({
+      dateKey: reviewDateKey,
+      messages: summaryMessages,
+    }, {
+      includeCompanionContext: aiCompanionContextEnabled,
+      depth: 'deep',
+    })
+      .then((result) => {
         const summary = addSummary({
           dateKey: reviewDateKey,
           title: result.title,
@@ -655,40 +583,22 @@ export default function CompanionScreen() {
         });
         if (reviewRequestIdRef.current !== requestId) return;
         setReviewSummary(summary);
-      } catch (error) {
+      })
+      .catch((error) => {
         if (reviewRequestIdRef.current !== requestId) return;
         const message = error instanceof Error ? error.message : 'Wenwen could not write the deeper review yet.';
         setReviewError(message);
-      } finally {
+      })
+      .finally(() => {
         if (reviewRequestIdRef.current === requestId) {
           setIsReviewLoading(false);
         }
-      }
-    });
-  };
-
-  const handleChargePersona = () => {
-    const charged = chargePersona();
-    if (!charged) {
-      Alert.alert(
-        'No Energy yet',
-        'Wenwen is asleep. Complete tasks, write a journal entry, or check in first to earn Energy.'
-      );
-      return;
-    }
-
-    setChargeClock(Date.now());
+      });
   };
 
   const sendMessageText = async (rawText: string, shouldClearInput = false) => {
     const cleanInput = clampText(rawText, INPUT_LIMITS.companionMessage).trim();
     if (!cleanInput || isSending) return;
-    if (!useRewardStore.getState().hasActivePersonaCharge()) {
-      requestPersonaCharge('Wenwen chat', () => {
-        sendMessageText(rawText, shouldClearInput).catch(() => undefined);
-      });
-      return;
-    }
 
     const userMessage = createCompanionMessage('user', cleanInput);
     const nextMessages = [...messages, userMessage];
@@ -727,12 +637,6 @@ export default function CompanionScreen() {
 
   const handleRetryFailedReply = async () => {
     if (!lastFailedPrompt || isSending) return;
-    if (!useRewardStore.getState().hasActivePersonaCharge()) {
-      requestPersonaCharge('Wenwen chat', () => {
-        handleRetryFailedReply().catch(() => undefined);
-      });
-      return;
-    }
 
     setIsSending(true);
     try {
@@ -761,15 +665,17 @@ export default function CompanionScreen() {
 
   const handleToggleVoiceMessage = async () => {
     if (isSending || isTranscribingVoice || voiceRecorder.isPreparing) return;
-    if (!isPersonaCharged) {
-      requestPersonaCharge('voice chat', () => {
-        handleToggleVoiceMessage().catch(() => undefined);
-      });
-      return;
-    }
 
     try {
       if (!voiceRecorder.isRecording) {
+        if (useRewardStore.getState().glowBalance < VOICE_TRANSCRIPTION_COST) {
+          Alert.alert(
+            'Energy needed',
+            `Voice chat costs ${VOICE_TRANSCRIPTION_COST} ${REWARD_CURRENCY_NAME}.`
+          );
+          return;
+        }
+
         await voiceRecorder.startRecording();
         return;
       }
@@ -778,6 +684,15 @@ export default function CompanionScreen() {
       const uri = await voiceRecorder.stopRecording();
       if (!uri) {
         throw new Error('No voice recording was saved.');
+      }
+
+      const didSpend = spendEnergy(VOICE_TRANSCRIPTION_COST);
+      if (!didSpend) {
+        Alert.alert(
+          'Energy needed',
+          `Voice chat costs ${VOICE_TRANSCRIPTION_COST} ${REWARD_CURRENCY_NAME}.`
+        );
+        return;
       }
 
       const transcription = await transcribeVoiceCheckIn(
@@ -837,38 +752,6 @@ export default function CompanionScreen() {
           <GlowBalancePill />
         </View>
 
-        <View
-          style={[
-            styles.chargeCard,
-            {
-              backgroundColor: isPersonaCharged ? theme.primarySoft : theme.surface,
-              borderColor: isPersonaCharged ? theme.primary : theme.border,
-            },
-          ]}
-        >
-          <View style={styles.chargeTextWrap}>
-            <Text style={[styles.chargeTitle, { color: theme.textStrong }]}>Persona charge</Text>
-            <Text style={[styles.chargeMeta, { color: theme.muted }]}>
-              {chargeStatusText}. 1 {REWARD_CURRENCY_NAME} wakes Wenwen for {PERSONA_CHARGE_HOURS} hours.
-            </Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Charge persona"
-            onPress={handleChargePersona}
-            style={[
-              styles.chargeButton,
-              { backgroundColor: canChargePersona ? theme.primary : theme.softSurface },
-              !canChargePersona && styles.chargeButtonDisabled,
-            ]}
-          >
-            <Ionicons name="flash" size={15} color={canChargePersona ? '#FFFFFF' : theme.subtle} />
-            <Text style={[styles.chargeButtonText, { color: canChargePersona ? '#FFFFFF' : theme.subtle }]}>
-              Charge
-            </Text>
-          </Pressable>
-        </View>
-
         <View style={styles.avatarStage}>
           <Animated.View
             pointerEvents="none"
@@ -919,7 +802,6 @@ export default function CompanionScreen() {
                   faceColor={avatarColors?.faceColor ?? DEFAULT_AVATAR_COLORS.faceColor}
                   bodyColor={avatarColors?.bodyColor ?? DEFAULT_AVATAR_COLORS.bodyColor}
                   presentation="peek"
-                  isAsleep={!isPersonaCharged}
                 />
               ) : (
                 <Text style={[styles.avatarFallback, { color: theme.primaryStrong }]}>
@@ -945,9 +827,7 @@ export default function CompanionScreen() {
             <View style={styles.chatHeaderText}>
               <Text style={[styles.chatTitle, { color: theme.textStrong }]}>Today&apos;s chat</Text>
               <Text style={[styles.chatMeta, { color: theme.muted }]}>
-                {!isPersonaCharged
-                  ? 'Wenwen is asleep'
-                  : userMessageCount === 0 ? 'No message yet' : `${userMessageCount} message${userMessageCount === 1 ? '' : 's'} from you`}
+                {userMessageCount === 0 ? 'No message yet' : `${userMessageCount} message${userMessageCount === 1 ? '' : 's'} from you`}
               </Text>
             </View>
             <View style={styles.chatHeaderActions}>
@@ -980,15 +860,15 @@ export default function CompanionScreen() {
                   onPress={() => handleOpenReviewForDate(today)}
                   style={[
                     styles.summaryButton,
-                    { backgroundColor: isPersonaCharged ? theme.primarySoft : theme.softSurface },
+                    { backgroundColor: theme.primarySoft },
                   ]}
                 >
                   <Ionicons
-                    name={isPersonaCharged ? 'sparkles-outline' : 'lock-closed-outline'}
+                    name="sparkles-outline"
                     size={18}
-                    color={isPersonaCharged ? theme.primaryStrong : theme.subtle}
+                    color={theme.primaryStrong}
                   />
-                  <Text style={[styles.summaryButtonText, { color: isPersonaCharged ? theme.primaryStrong : theme.muted }]}>Review</Text>
+                  <Text style={[styles.summaryButtonText, { color: theme.primaryStrong }]}>Review</Text>
                 </Pressable>
               )}
             </View>
@@ -1112,7 +992,7 @@ export default function CompanionScreen() {
               onPress={handleSend}
               style={[styles.sendButton, { backgroundColor: canSend ? theme.primary : theme.softSurface }]}
             >
-              <Ionicons name={isPersonaCharged ? 'send' : 'flash'} size={16} color={canSend ? '#FFFFFF' : theme.subtle} />
+              <Ionicons name="send" size={16} color={canSend ? '#FFFFFF' : theme.subtle} />
             </Pressable>
           </View>
         </View>
@@ -1268,51 +1148,6 @@ export default function CompanionScreen() {
                 ))}
               </View>
             </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        animationType="fade"
-        transparent
-        visible={Boolean(energyModalMode)}
-        onRequestClose={closeEnergyModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.energyModalCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <View style={[styles.energyModalIcon, { backgroundColor: theme.primarySoft }]}>
-              <Ionicons name="flash-off-outline" size={22} color={theme.primaryStrong} />
-            </View>
-            <Text style={[styles.energyModalTitle, { color: theme.textStrong }]}>Wenwen has no energy</Text>
-            <Text style={[styles.energyModalBody, { color: theme.muted }]}>
-              {energyModalMode === 'confirm'
-                ? `Spend ${PERSONA_CHARGE_COST} ${REWARD_CURRENCY_NAME} to charge Wenwen for ${PERSONA_CHARGE_HOURS} hours and use ${energyModalFeature}.`
-                : 'Wenwen cannot chat or review right now. Complete tasks, write a journal entry, or check in first to earn Energy.'}
-            </Text>
-
-            <View style={styles.energyModalActions}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={energyModalMode === 'confirm' ? 'Cancel charging Wenwen' : 'Close energy message'}
-                onPress={closeEnergyModal}
-                style={[styles.energySecondaryButton, { backgroundColor: theme.softSurface }]}
-              >
-                <Text style={[styles.energySecondaryButtonText, { color: theme.muted }]}>
-                  {energyModalMode === 'confirm' ? 'Cancel' : 'Got it'}
-                </Text>
-              </Pressable>
-              {energyModalMode === 'confirm' && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Use Energy to charge Wenwen"
-                  onPress={handleConfirmEnergyUse}
-                  style={[styles.energyPrimaryButton, { backgroundColor: theme.primary }]}
-                >
-                  <Ionicons name="flash" size={16} color="#FFFFFF" />
-                  <Text style={styles.energyPrimaryButtonText}>Use Energy</Text>
-                </Pressable>
-              )}
-            </View>
           </View>
         </View>
       </Modal>
