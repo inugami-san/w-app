@@ -25,6 +25,7 @@ import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/hom
 import { GlowBalancePill } from '@/src/components/rewards/GlowBalancePill';
 import { useKeyboardState } from '@/src/hooks/use-keyboard-state';
 import { useVoiceCheckInRecorder } from '@/src/hooks/use-voice-check-in-recorder';
+import { useWebVoiceInput } from '@/src/hooks/use-web-voice-input';
 import { useWenwenSpeech } from '@/src/hooks/use-wenwen-speech';
 import { buildCompanionMemoryContext } from '@/src/services/companion-memory';
 import { generateCompanionReply } from '@/src/services/gemini-companion-chat';
@@ -226,7 +227,9 @@ export default function CompanionScreen() {
   const reviewRequestIdRef = useRef(0);
   const { isVisible: isKeyboardVisible } = useKeyboardState();
   const voiceRecorder = useVoiceCheckInRecorder();
+  const webVoiceInput = useWebVoiceInput();
   const wenwenSpeech = useWenwenSpeech();
+  const isWebPlatform = Platform.OS === 'web';
   const avatarScale = useRef(new Animated.Value(1)).current;
   const avatarTranslateY = useRef(new Animated.Value(0)).current;
   const avatarRotate = useRef(new Animated.Value(0)).current;
@@ -234,6 +237,10 @@ export default function CompanionScreen() {
   const floatingBubble = useRef(new Animated.Value(0)).current;
   const lastAnimatedMessageIdRef = useRef('');
   const canSend = input.trim().length > 0 && !isSending && !isTranscribingVoice;
+  // On web: show interim transcript in the input field while user speaks
+  const displayInput = isWebPlatform && webVoiceInput.isListening && webVoiceInput.interimTranscript
+    ? webVoiceInput.interimTranscript
+    : input;
   const chatPanelHeight = isKeyboardVisible
     ? Math.min(Math.max(windowHeight * 0.34, 280), 390)
     : Math.min(Math.max(windowHeight * 0.46, 360), 520);
@@ -666,6 +673,22 @@ export default function CompanionScreen() {
     }
   };
 
+  /** Web: use SpeechRecognition — real-time, no energy cost, no Gemini transcription. */
+  const handleWebVoiceMessage = useCallback(() => {
+    if (isSending) return;
+
+    if (webVoiceInput.isListening) {
+      webVoiceInput.stopListening();
+      return;
+    }
+
+    webVoiceInput.startListening((finalText) => {
+      if (finalText.trim()) {
+        sendMessageText(finalText);
+      }
+    });
+  }, [isSending, sendMessageText, webVoiceInput]);
+
   const handleToggleVoiceMessage = async () => {
     if (isSending || isTranscribingVoice || voiceRecorder.isPreparing) return;
 
@@ -968,7 +991,8 @@ export default function CompanionScreen() {
             )}
           </ScrollView>
 
-          {voiceRecorder.isRecording && (
+          {/* Recording bar: native expo-audio recording */}
+          {!isWebPlatform && voiceRecorder.isRecording && (
             <View style={[styles.recordingBar, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
               <View style={styles.recordingStatus}>
                 <View style={[styles.recordingDot, { backgroundColor: theme.primary }]} />
@@ -985,36 +1009,78 @@ export default function CompanionScreen() {
             </View>
           )}
 
+          {/* Listening bar: web SpeechRecognition */}
+          {isWebPlatform && webVoiceInput.isListening && (
+            <View style={[styles.recordingBar, { backgroundColor: theme.surface, borderColor: theme.primary }]}>
+              <View style={styles.recordingStatus}>
+                <View style={[styles.recordingDot, { backgroundColor: theme.primary }]} />
+                <Text style={[styles.recordingText, { color: theme.textStrong }]}>
+                  {webVoiceInput.interimTranscript ? webVoiceInput.interimTranscript : 'Listening…'}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Cancel voice input"
+                onPress={webVoiceInput.stopListening}
+                style={[styles.cancelRecordingButton, { backgroundColor: theme.softSurface }]}
+              >
+                <Text style={[styles.cancelRecordingText, { color: theme.muted }]}>Cancel</Text>
+              </Pressable>
+            </View>
+          )}
+
           <View style={[styles.composerBar, { backgroundColor: theme.surface, borderColor: theme.softBorder }]}>
             <TextInput
               ref={inputRef}
-              value={input}
+              value={displayInput}
               onChangeText={setInput}
               maxLength={INPUT_LIMITS.companionMessage}
-              placeholder="Type a thought or update..."
+              placeholder={isWebPlatform && webVoiceInput.isSupported ? 'Type or tap the mic to speak…' : 'Type a thought or update...'}
               placeholderTextColor={theme.subtle}
               multiline
-              style={[styles.input, { color: theme.text }, webInputReset]}
+              editable={!webVoiceInput.isListening}
+              style={[styles.input, { color: webVoiceInput.isListening ? theme.muted : theme.text }, webInputReset]}
             />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={voiceRecorder.isRecording ? 'Stop voice message recording' : 'Record voice message'}
-              disabled={isSending || isTranscribingVoice || voiceRecorder.isPreparing}
-              onPress={handleToggleVoiceMessage}
+              accessibilityLabel={
+                isWebPlatform
+                  ? (webVoiceInput.isListening ? 'Stop listening' : 'Start voice input')
+                  : (voiceRecorder.isRecording ? 'Stop voice message recording' : 'Record voice message')
+              }
+              disabled={
+                isWebPlatform
+                  ? (isSending || !webVoiceInput.isSupported)
+                  : (isSending || isTranscribingVoice || voiceRecorder.isPreparing)
+              }
+              onPress={isWebPlatform ? handleWebVoiceMessage : handleToggleVoiceMessage}
               style={[
                 styles.voiceComposerButton,
                 {
-                  backgroundColor: voiceRecorder.isRecording ? theme.primarySoft : theme.softSurface,
-                  borderColor: voiceRecorder.isRecording ? theme.primary : theme.softBorder,
+                  backgroundColor:
+                    (isWebPlatform ? webVoiceInput.isListening : voiceRecorder.isRecording)
+                      ? theme.primarySoft
+                      : theme.softSurface,
+                  borderColor:
+                    (isWebPlatform ? webVoiceInput.isListening : voiceRecorder.isRecording)
+                      ? theme.primary
+                      : theme.softBorder,
                 },
-                (isSending || isTranscribingVoice || voiceRecorder.isPreparing) && styles.voiceComposerButtonDisabled,
+                (isWebPlatform
+                  ? (isSending || !webVoiceInput.isSupported)
+                  : (isSending || isTranscribingVoice || voiceRecorder.isPreparing)
+                ) && styles.voiceComposerButtonDisabled,
               ]}
             >
-              {isTranscribingVoice || voiceRecorder.isPreparing ? (
+              {(!isWebPlatform && (isTranscribingVoice || voiceRecorder.isPreparing)) ? (
                 <ActivityIndicator color={theme.primaryStrong} />
               ) : (
                 <Ionicons
-                  name={voiceRecorder.isRecording ? 'stop-circle-outline' : 'mic-outline'}
+                  name={
+                    isWebPlatform
+                      ? (webVoiceInput.isListening ? 'stop-circle-outline' : 'mic-outline')
+                      : (voiceRecorder.isRecording ? 'stop-circle-outline' : 'mic-outline')
+                  }
                   size={16}
                   color={theme.primaryStrong}
                 />
