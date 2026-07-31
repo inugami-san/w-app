@@ -25,6 +25,7 @@ import { BottomTabPlaceholder, type DashboardTabKey } from '@/src/components/hom
 import { GlowBalancePill } from '@/src/components/rewards/GlowBalancePill';
 import { useKeyboardState } from '@/src/hooks/use-keyboard-state';
 import { useVoiceCheckInRecorder } from '@/src/hooks/use-voice-check-in-recorder';
+import { useWenwenSpeech } from '@/src/hooks/use-wenwen-speech';
 import { buildCompanionMemoryContext } from '@/src/services/companion-memory';
 import { generateCompanionReply } from '@/src/services/gemini-companion-chat';
 import { generateCompanionSummary } from '@/src/services/gemini-companion-summary';
@@ -225,6 +226,7 @@ export default function CompanionScreen() {
   const reviewRequestIdRef = useRef(0);
   const { isVisible: isKeyboardVisible } = useKeyboardState();
   const voiceRecorder = useVoiceCheckInRecorder();
+  const wenwenSpeech = useWenwenSpeech();
   const avatarScale = useRef(new Animated.Value(1)).current;
   const avatarTranslateY = useRef(new Animated.Value(0)).current;
   const avatarRotate = useRef(new Animated.Value(0)).current;
@@ -622,6 +624,7 @@ export default function CompanionScreen() {
         memoryContext,
       });
       addMessage(today, createCompanionMessage('assistant', reply));
+      wenwenSpeech.speak(reply);
     } catch (error) {
       setLastFailedPrompt(cleanInput);
       const message = error instanceof Error ? error.message : 'Unable to reach Wenwen right now.';
@@ -730,6 +733,14 @@ export default function CompanionScreen() {
     }
   };
 
+  // Stop Wenwen speaking when navigating away
+  useEffect(() => {
+    return () => {
+      wenwenSpeech.stop();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const recordingSeconds = Math.max(0, Math.floor(voiceRecorder.durationMillis / 1000));
   const recordingDuration = `${Math.floor(recordingSeconds / 60)}:${String(recordingSeconds % 60).padStart(2, '0')}`;
 
@@ -831,6 +842,30 @@ export default function CompanionScreen() {
               </Text>
             </View>
             <View style={styles.chatHeaderActions}>
+              {/* Voice reply toggle */}
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: wenwenSpeech.voiceEnabled }}
+                accessibilityLabel={wenwenSpeech.voiceEnabled ? 'Turn Wenwen voice off' : 'Turn Wenwen voice on'}
+                onPress={wenwenSpeech.toggleVoice}
+                style={[
+                  styles.memoryPill,
+                  {
+                    backgroundColor: wenwenSpeech.voiceEnabled ? theme.primarySoft : theme.surface,
+                    borderColor: wenwenSpeech.voiceEnabled ? theme.primary : theme.softBorder,
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={wenwenSpeech.isSpeaking ? 'volume-high' : wenwenSpeech.voiceEnabled ? 'volume-medium-outline' : 'volume-mute-outline'}
+                  size={14}
+                  color={wenwenSpeech.voiceEnabled ? theme.primaryStrong : theme.subtle}
+                />
+                <Text style={[styles.memoryPillText, { color: wenwenSpeech.voiceEnabled ? theme.primaryStrong : theme.muted }]}>
+                  {wenwenSpeech.isSpeaking ? 'Speaking…' : wenwenSpeech.voiceEnabled ? 'Voice on' : 'Voice off'}
+                </Text>
+              </Pressable>
+              {/* Companion memory toggle */}
               <Pressable
                 accessibilityRole="switch"
                 accessibilityState={{ checked: companionMemoryEnabled }}
